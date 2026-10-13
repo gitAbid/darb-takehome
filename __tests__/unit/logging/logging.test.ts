@@ -1,8 +1,9 @@
 /** Logging contract: configuration, redaction, error serialization and the Logger implementations (ARCHITECTURE §7–§8). */
 import pino from 'pino';
 
-import { ConsoleLogger } from '@/lib/logging/console-logger';
+import { consoleDebug, ConsoleLogger } from '@/lib/logging/console-logger';
 import { createLogger } from '@/lib/logging/create-logger';
+import { runWithLogContext } from '@/lib/logging/log-context';
 import { LogEvents } from '@/lib/logging/log-events';
 import { LoggingConfigError, loadLoggingConfig } from '@/lib/logging/logging-config';
 import { PinoLogger } from '@/lib/logging/pino-logger';
@@ -157,9 +158,46 @@ describe('Logger implementations', () => {
     });
   });
 
+  it('debug is emitted only at LOG_LEVEL=debug, and every implementation adds the request context', async () => {
+    const sink = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const debugSink = jest.fn();
+    new ConsoleLogger({}, sink).debug(LogEvents.MatchCandidates);
+    const stream = new MemoryStream();
+    const pinoAt = (level: 'info' | 'debug') =>
+      new PinoLogger(pino(buildPinoOptions(buildConfig({ level })), stream)).child({ documentId: 3 });
+    const recording = new RecordingLogger();
+    await runWithLogContext({ correlationId: 'c-1' }, async () => {
+      await Promise.resolve();
+      new ConsoleLogger({}, sink, debugSink).child({ documentId: 3 }).debug(LogEvents.MatchCandidates, { n: 2 });
+      pinoAt('info').debug(LogEvents.MatchCandidates);
+      runWithLogContext({ stage: 'match' }, () => {
+        const logger = pinoAt('debug');
+        logger.debug(LogEvents.MatchCandidates, { candidates: 2 });
+        logger.info(LogEvents.MatchDecided);
+      });
+      recording.debug(LogEvents.MatchCandidates);
+    });
+    expect(debugSink).toHaveBeenCalledTimes(1);
+    expect(debugSink).toHaveBeenCalledWith('match.candidates', { correlationId: 'c-1', documentId: 3, n: 2 });
+    const [candidates, decided] = stream.records();
+    expect(stream.records()).toHaveLength(2);
+    expect(candidates).toMatchObject({ level: 20, event: 'match.candidates', correlationId: 'c-1', stage: 'match' });
+    // pino merges a line's fields into the mixin's object; the request context must not collect them.
+    expect(decided).toMatchObject({ level: 30, correlationId: 'c-1', stage: 'match' });
+    expect(decided).not.toHaveProperty('candidates');
+    expect(recording.entries).toEqual([
+      { level: 'debug', event: 'match.candidates', context: { correlationId: 'c-1' } },
+    ]);
+    const spy = jest.spyOn(console, 'debug').mockImplementation(() => undefined);
+    consoleDebug('match.candidates');
+    expect(spy).toHaveBeenCalledWith('[DEBUG] match.candidates', '');
+    spy.mockRestore();
+  });
+
   it('createLogger picks the implementation for the configured sink', () => {
     expect(createLogger(buildConfig({ sink: 'test' }))).toBeInstanceOf(RecordingLogger);
     expect(createLogger(buildConfig({ sink: 'console' }))).toBeInstanceOf(ConsoleLogger);
+    expect(createLogger(buildConfig({ sink: 'console', level: 'debug' }))).toBeInstanceOf(ConsoleLogger);
     const stream = new MemoryStream();
     const logger = createLogger(buildConfig(), { createPino: () => pino(stream) });
     logger.info(LogEvents.WebhookReceived);

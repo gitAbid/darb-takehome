@@ -113,13 +113,16 @@ lib/
   domain/                             pure types and helpers, no I/O
     riyadh-day · clock · statuses · reason-codes · content-hash · document-date · phone · with-timeout
   logging/
-    logger.ts                         Logger interface
+    logger.ts                         Logger interface (debug · info · warn · error · child)
+    log-context.ts                    request correlationId via AsyncLocalStorage
+    log-events.ts                     stable event names
     console-logger.ts                 adapts the brief's lib/logger.ts
     pino-logger.ts                    default: async transports, rotation + gzip
     recording-logger.ts               for tests
     redact.ts · serialize-error.ts
     transports/rotating-file.mjs      worker-thread transport on rotating-file-stream
   config/app-config.ts                Zod-parsed environment (fail fast)
+  config/config-summary.ts            secret-free summary for the app.started event
   storage/                            BlobStore interface · LocalFileBlobStore (keys = content hashes)
   webhooks/
     inbound-message.ts                channel-agnostic InboundMessage / AdaptedDelivery types
@@ -129,6 +132,7 @@ lib/
     http/webhook-handler.ts           JSON → service → 200 / 400 / 500
     http/transaction-handler.ts       card feed → 201 / 200 duplicate / 400 / 500
     http/read-json.ts                 shared JSON body parsing
+    http/with-request-logging.ts      decorator: correlationId + one http.request line per request
     http/next-after-scheduler.ts      BackgroundScheduler on Next.js after()
   extraction/
     types.ts                          ◀ brief interface, verbatim
@@ -151,7 +155,7 @@ lib/
       document-state-machine.ts       allowed transitions + guarded updates
       match-stage.ts                  candidates → match → persist (shared with re-matching)
       match-persistence.ts            MatchResult → rows; race demotion
-      match-logging.ts                one match.decided event per decision
+      match-logging.ts                one match.decided event per decision (+ scored candidates at debug)
       background-scheduler.ts         interface for post-response work
     matching/
       types.ts · matching-config.ts
@@ -418,13 +422,27 @@ flowchart LR
 - **Async:** pino transports write from a worker thread, so disk or terminal I/O never delays a webhook response.
 - **Rotation + compression:** `rotating-file-stream` (pino-roll cannot compress). Disabled with
   `LOG_FILE_ENABLED=false` on containers/serverless, where stdout is collected and rotated by the platform.
-- **Events, not prose:** `webhook.received`, `webhook.rejected`, `webhook.message_ignored`, `document.created`,
-  `document.duplicate`, `sender.unknown`, `extraction.completed`, `match.decided`, `document.failed`,
-  `review.confirmed`, `review.rejected`, `review.conflict` — each with structured context.
-- **Correlation:** each request gets a `correlationId`; a child logger carries it into the post-response processing,
-  plus `documentId` once known.
+- **Events, not prose.** Every line has a stable `event` plus structured context. Event names live in
+  `lib/logging/log-events.ts`.
+
+  | Level   | Events                                                                                                                                                                                                                                                                                                                                           |
+  | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | `info`  | `app.started` (secret-free config summary) · `http.request` (method, path, status, durationMs) · `webhook.received` · `webhook.message_ignored` · `document.created` · `document.duplicate` · `extraction.completed` (with durationMs) · `match.decided` · `transaction.received` · `rematch.completed` · `review.confirmed` · `review.rejected` |
+  | `warn`  | `webhook.rejected` (all three endpoints) · `webhook.unauthorized` · `webhook.signature_disabled` · `sender.unknown` · `llm.failed` (status + first 300 chars of the provider's error) · `review.conflict` · `document.failed` at intake (media unavailable)                                                                                      |
+  | `error` | `document.failed` (processing or rematch) · `transaction.received` with `stage: ingest` when nothing could be stored                                                                                                                                                                                                                             |
+  | `debug` | `media.loaded` (origin, mime, bytes) · `document.processing` · `extraction.fields` (what was read) · `match.candidates` (top 5 with signals and flags, plus how many transactions each filter excluded) · `llm.completed` (model, status, durationMs, tokens)                                                                                    |
+
+  `debug` is off by default. `LOG_LEVEL=debug` answers "why did this document match, or not match" from the logs
+  alone, without opening the database.
+
+- **Correlation:** `withRequestLogging` (`lib/webhooks/http/with-request-logging.ts`) gives every inbound request a
+  `correlationId` and returns it in the `x-correlation-id` response header. It is held in `AsyncLocalStorage`
+  (`log-context.ts`), and Next's `after()` keeps that context. So every event of the request and of its post-response
+  processing carries the same id, with no logger threaded through the call chain. Child loggers add `documentId` once
+  it is known.
 - **Privacy (Saudi PDPL):** never log file bytes, raw OCR text or full payloads; phones and emails are masked
-  (`+9665•••••567`, `f•••@najd-logistics.example`); pino `redact` paths are a second safety net.
+  (`+9665•••••567`, `f•••@najd-logistics.example`); card digits are logged only as `hasCardLast4`; pino `redact`
+  paths are a second safety net.
 - **The matcher never logs** (it is pure); the processor logs its result once as `match.decided`.
 - **Logs are not the audit trail** — `decidedBy`, `decidedAt`, `signals`, `failureReason` in the database are.
 - **Implementation notes:** pretty output is derived (`NODE_ENV !== 'production'`) rather than configured; the rotation
@@ -443,7 +461,7 @@ flowchart LR
 | `BLOB_DIR`               | `.storage`                                       | Received document files, by content hash     |
 | `MEDIA_FETCH_TIMEOUT_MS` | `3000`                                           | WhatsApp media fetch timeout at intake       |
 | `LOG_SINK`               | `pino`                                           | `pino` · `console` · `test`                  |
-| `LOG_LEVEL`              | `info`                                           |                                              |
+| `LOG_LEVEL`              | `info`                                           | `debug` adds per-stage detail (see §7)       |
 | `LOG_FILE_ENABLED`       | `true` outside production, `false` in production | Disable on containers/serverless             |
 | `LOG_DIR`                | `logs`                                           | Rotated files (gitignored)                   |
 | `LOG_ROTATE_SIZE`        | `10M`                                            |                                              |

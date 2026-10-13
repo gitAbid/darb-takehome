@@ -46,7 +46,11 @@ export function createTestApp(overrides: ContainerOverrides = {}, env: Record<st
       });
       const response = await container.webhooks[channel](request);
       await scheduler.flush();
-      return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+      return {
+        status: response.status,
+        body: (await response.json()) as Record<string, unknown>,
+        correlationId: response.headers.get('x-correlation-id'),
+      };
     },
     /** POSTs a card-feed transaction and waits for the re-matching it triggers. */
     async postTransaction(body: unknown, headers: Record<string, string> = {}) {

@@ -1,6 +1,7 @@
+import { currentLogContext } from './log-context';
 import type { LogContext, Logger } from './logger';
 
-export type LogLevel = 'info' | 'warn' | 'error';
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface LogEntry {
   level: LogLevel;
@@ -14,6 +15,10 @@ export class RecordingLogger implements Logger {
     readonly entries: LogEntry[] = [],
     private readonly bindings: LogContext = {},
   ) {}
+
+  debug(event: string, context?: LogContext): void {
+    this.record('debug', event, context);
+  }
 
   info(event: string, context?: LogContext): void {
     this.record('info', event, context);
@@ -37,6 +42,6 @@ export class RecordingLogger implements Logger {
   }
 
   private record(level: LogLevel, event: string, context?: LogContext): void {
-    this.entries.push({ level, event, context: { ...this.bindings, ...context } });
+    this.entries.push({ level, event, context: { ...currentLogContext(), ...this.bindings, ...context } });
   }
 }

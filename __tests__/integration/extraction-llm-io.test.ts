@@ -8,6 +8,7 @@ import { loadAppConfig } from '@/lib/config/app-config';
 import { createExtractor } from '@/lib/extraction/create-extractor';
 import { ExtractionFailedError } from '@/lib/extraction/extraction-errors';
 import { UnpdfTextReader } from '@/lib/extraction/llm/pdf-text-reader';
+import { RecordingLogger } from '@/lib/logging/recording-logger';
 
 import { FIXTURES_DIR } from '../helpers/e2e-app';
 
@@ -39,7 +40,7 @@ const live = process.env.LLM_LIVE_TEST === '1' ? describe : describe.skip;
 
 live('live provider (opt-in)', () => {
   it('reads the S01 phone photo: total, card and date as printed', async () => {
-    const extractor = createExtractor(loadAppConfig(process.env).extractor, FIXTURES_DIR);
+    const extractor = createExtractor(loadAppConfig(process.env).extractor, FIXTURES_DIR, new RecordingLogger());
     expect(await extractor.extract(fixture('01-exact-match', 'document.jpg'), 'image/jpeg')).toMatchObject({
       totalAmount: 15000,
       cardLast4: '4471',

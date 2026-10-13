@@ -17,6 +17,7 @@ import { llmExtractionSchema } from '@/lib/extraction/llm/llm-extraction.schema'
 import { LlmExtractor } from '@/lib/extraction/llm/llm-extractor';
 import { toExtractedDocument } from '@/lib/extraction/llm/to-extracted-document';
 import { MockExtractor } from '@/lib/extraction/mock-extractor';
+import { RecordingLogger } from '@/lib/logging/recording-logger';
 
 import { FIXTURES_DIR } from '../../helpers/e2e-app';
 
@@ -167,14 +168,25 @@ describe('OpenAI-compatible client', () => {
 
   it('speaks the chat-completions wire format; key, temperature and strict output only when configured', async () => {
     const fetchImpl = jest.fn().mockImplementation(async () => jsonResponse(reply(REPLY)));
-    expect(JSON.parse(await new OpenAiCompatibleClient(SETTINGS, fetchImpl).complete(request))).toEqual(REPLY);
+    const logger = new RecordingLogger();
+    expect(JSON.parse(await new OpenAiCompatibleClient(SETTINGS, logger, fetchImpl).complete(request))).toEqual(REPLY);
+    expect(logger.find('llm.completed')).toEqual([
+      {
+        level: 'debug',
+        event: 'llm.completed',
+        context: expect.objectContaining({ model: 'vision-model', status: 200, promptTokens: null }),
+      },
+    ]);
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe('https://llm.example/v1/chat/completions');
     expect(init.headers).toEqual({ 'content-type': 'application/json', authorization: 'Bearer sk-test' });
     expect(JSON.parse(init.body)).toEqual({ model: 'vision-model', messages: request.messages });
 
     const keyless = { ...SETTINGS, apiKey: null, temperature: 0, structuredOutput: true };
-    await new OpenAiCompatibleClient(keyless, fetchImpl).complete(request);
+    const usage = { prompt_tokens: 812, completion_tokens: 64 };
+    fetchImpl.mockImplementationOnce(async () => jsonResponse({ ...reply(REPLY), usage }));
+    await new OpenAiCompatibleClient(keyless, logger, fetchImpl).complete(request);
+    expect(logger.find('llm.completed')[1].context).toMatchObject({ promptTokens: 812, completionTokens: 64 });
     const [, structured] = fetchImpl.mock.calls[1];
     expect(structured.headers).not.toHaveProperty('authorization');
     expect(JSON.parse(structured.body).temperature).toBe(0);
@@ -185,6 +197,7 @@ describe('OpenAI-compatible client', () => {
   });
 
   it('turns HTTP errors, empty replies, timeouts and network failures into ExtractionFailedError', async () => {
+    const logger = new RecordingLogger();
     const timeout = Object.assign(new Error('aborted'), { name: 'TimeoutError' });
     const outcomes = await Promise.all(
       [
@@ -194,7 +207,7 @@ describe('OpenAI-compatible client', () => {
         () => Promise.reject(timeout),
         () => Promise.reject(new TypeError('fetch failed')),
       ].map((fetchImpl) =>
-        new OpenAiCompatibleClient(SETTINGS, fetchImpl as unknown as typeof fetch)
+        new OpenAiCompatibleClient(SETTINGS, logger, fetchImpl as unknown as typeof fetch)
           .complete(request)
           .catch((error: unknown) => [error instanceof ExtractionFailedError, (error as Error).message]),
       ),
@@ -205,6 +218,9 @@ describe('OpenAI-compatible client', () => {
       [true, 'LLM reply was empty'],
       [true, 'LLM request timed out after 1000 ms'],
       [true, 'LLM request unreachable'],
+    ]);
+    expect(logger.find('llm.failed').map((entry) => entry.context)).toEqual([
+      expect.objectContaining({ status: 429, detail: '{"error":"rate limited"}' }),
     ]);
   });
 });
@@ -234,7 +250,8 @@ describe('extractor selection', () => {
         structuredOutput: false,
       },
     });
-    expect(createExtractor({ kind: 'mock' }, FIXTURES_DIR)).toBeInstanceOf(MockExtractor);
-    if (llm.ok) expect(createExtractor(llm.config, FIXTURES_DIR)).toBeInstanceOf(LlmExtractor);
+    const logger = new RecordingLogger();
+    expect(createExtractor({ kind: 'mock' }, FIXTURES_DIR, logger)).toBeInstanceOf(MockExtractor);
+    if (llm.ok) expect(createExtractor(llm.config, FIXTURES_DIR, logger)).toBeInstanceOf(LlmExtractor);
   });
 });

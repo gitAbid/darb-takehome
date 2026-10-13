@@ -43,6 +43,9 @@ describe('re-matching when a transaction arrives', () => {
     ]);
     expect((await documentOutcome('wamid.S13-0001')).status).toBe('UNMATCHED');
     expect((await documentOutcome('msg_8f2a1:0')).status).toBe('UNMATCHED');
+    expect(app.logger.find('rematch.completed').map((entry) => entry.context)).toEqual([
+      expect.objectContaining({ transactionId: t16, rematched: 1 }),
+    ]);
   });
 
   it('never re-proposes a transaction a reviewer already rejected for the document', async () => {
@@ -93,6 +96,10 @@ describe('POST /api/transactions', () => {
       body: { issues: [{ path: 'cardId', message: 'card does not belong to this client' }] },
     });
     expect((await app.postTransaction('{oops')).status).toBe(400);
+    expect(app.logger.find('webhook.rejected').map((entry) => entry.context.issues)).toEqual([
+      ['mcc', 'amount'],
+      ['cardId'],
+    ]);
     expect(await db.transaction.count({ where: { externalRef: { not: null } } })).toBe(1);
     const unreachable = new PrismaClient({ datasources: { db: { url: 'file:/nonexistent-dir/none.db' } } });
     expect(await createTestApp({ db: unreachable }).postTransaction(transaction({ externalRef: 'z' }))).toEqual({

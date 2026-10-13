@@ -1,10 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { loadAppConfig, type AppConfig } from './config/app-config';
+import { summarizeConfig } from './config/config-summary';
 import { SystemClock, type Clock } from './domain/clock';
 import { createExtractor } from './extraction/create-extractor';
 import type { DocumentExtractor } from './extraction/types';
 import { createLogger } from './logging/create-logger';
+import { LogEvents } from './logging/log-events';
 import type { Logger } from './logging/logger';
 import { FixtureMediaStore } from './media/fixture-media-store';
 import type { MediaStore } from './media/media-store';
@@ -29,6 +31,7 @@ import { TransactionIngestionService } from './services/transactions/transaction
 import { NextAfterScheduler } from './webhooks/http/next-after-scheduler';
 import { createTransactionHandler } from './webhooks/http/transaction-handler';
 import { createWebhookHandler, type WebhookHandler } from './webhooks/http/webhook-handler';
+import { withRequestLogging } from './webhooks/http/with-request-logging';
 import { createWebhookVerifiers } from './webhooks/security/create-verifiers';
 import { createWhatsAppVerificationHandler } from './webhooks/whatsapp/verification-handshake';
 
@@ -61,6 +64,7 @@ const globalForContainer = globalThis as unknown as { darbContainer?: Container 
 export function createContainer(config: AppConfig = loadAppConfig(), overrides: ContainerOverrides = {}): Container {
   const db = overrides.db ?? prisma;
   const logger = overrides.logger ?? createLogger(config.logging);
+  logger.info(LogEvents.AppStarted, summarizeConfig(config));
   const repositories = createPrismaRepositories(db);
   const unitOfWork = new PrismaUnitOfWork(db);
   const clock = overrides.clock ?? new SystemClock();
@@ -84,7 +88,7 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
   const processor = new DocumentProcessor({
     repositories,
     blobStore,
-    extractor: overrides.extractor ?? createExtractor(config.extractor, config.fixturesDir),
+    extractor: overrides.extractor ?? createExtractor(config.extractor, config.fixturesDir, logger),
     senders,
     matchStage,
     logger,
@@ -98,6 +102,7 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
     logger,
   });
   const verifiers = createWebhookVerifiers(config.webhookSecurity, logger);
+  const logged = (handler: WebhookHandler) => withRequestLogging(handler, logger);
   return {
     ingestion,
     processor,
@@ -106,14 +111,16 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
     documentFiles: new DocumentFileService(repositories.documents, blobStore),
     logger,
     webhooks: {
-      email: createWebhookHandler((payload) => ingestion.receiveEmail(payload), verifiers.email, logger),
-      whatsapp: createWebhookHandler((payload) => ingestion.receiveWhatsApp(payload), verifiers.whatsapp, logger),
-      whatsappVerification: createWhatsAppVerificationHandler(config.webhookSecurity.whatsappVerifyToken, logger),
+      email: logged(createWebhookHandler((payload) => ingestion.receiveEmail(payload), verifiers.email, logger)),
+      whatsapp: logged(
+        createWebhookHandler((payload) => ingestion.receiveWhatsApp(payload), verifiers.whatsapp, logger),
+      ),
+      whatsappVerification: logged(
+        createWhatsAppVerificationHandler(config.webhookSecurity.whatsappVerifyToken, logger),
+      ),
     },
-    transactions: createTransactionHandler(
-      (payload) => transactionIngestion.receive(payload),
-      verifiers.transactions,
-      logger,
+    transactions: logged(
+      createTransactionHandler((payload) => transactionIngestion.receive(payload), verifiers.transactions, logger),
     ),
   };
 }

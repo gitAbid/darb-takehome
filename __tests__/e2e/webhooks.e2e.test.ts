@@ -209,9 +209,53 @@ describe('idempotency and delivery behaviour (docs/SCENARIOS.md §4)', () => {
     const unreachable = new PrismaClient({ datasources: { db: { url: 'file:/nonexistent-dir/none.db' } } });
     const app = createTestApp({ db: unreachable });
     const response = await app.post('email', payload('05-invoice-no-transaction'));
-    expect(response).toEqual({ status: 500, body: { error: 'INTERNAL' } });
+    expect(response).toMatchObject({ status: 500, body: { error: 'INTERNAL' } });
     expect(app.logger.entries.some((entry) => entry.level === 'error')).toBe(true);
     await unreachable.$disconnect();
+  });
+});
+
+describe('observability (ARCHITECTURE §7)', () => {
+  it('every event of a request, and of the processing after its response, carries the correlationId it returns', async () => {
+    const app = createTestApp();
+    const first = await app.post('whatsapp', payload('01-exact-match'));
+    const second = await app.post('whatsapp', payload('01-exact-match'));
+    expect(first.correlationId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(second.correlationId).not.toBe(first.correlationId);
+    const ofFirst = app.logger.entries.filter((entry) => entry.context.correlationId === first.correlationId);
+    expect(ofFirst.map((entry) => `${entry.level} ${entry.event}`)).toEqual([
+      'info webhook.received',
+      'debug media.loaded',
+      'info document.created',
+      'info http.request',
+      'debug document.processing',
+      'info extraction.completed',
+      'debug extraction.fields',
+      'debug match.candidates',
+      'info match.decided',
+    ]);
+    expect(app.logger.find('http.request')[0].context).toMatchObject({
+      method: 'POST',
+      path: '/api/webhooks/whatsapp',
+      status: 200,
+      durationMs: expect.any(Number),
+    });
+    const [fields] = app.logger.find('extraction.fields');
+    expect(fields.context).toMatchObject({ totalAmount: 15000, hasCardLast4: true });
+    expect(JSON.stringify(fields.context)).not.toContain('4471');
+    expect(app.logger.find('match.candidates')[0].context.candidates).toHaveLength(2);
+  });
+
+  it('app.started summarizes the configuration without leaking a secret', () => {
+    const app = createTestApp({}, { WHATSAPP_APP_SECRET: 'app-secret-value', EMAIL_WEBHOOK_SECRET: 'email-secret' });
+    const [started] = app.logger.find('app.started');
+    expect(started.context).toMatchObject({
+      extractor: { kind: 'mock' },
+      signedChannels: ['whatsapp', 'email'],
+      whatsappHandshake: false,
+      logging: { sink: 'test', level: 'info' },
+    });
+    expect(JSON.stringify(started.context)).not.toMatch(/secret/);
   });
 });
 
@@ -240,7 +284,7 @@ describe('webhook authentication (bonus B5)', () => {
     });
     const before = { documents: await db.document.count(), transactions: await db.transaction.count() };
 
-    expect(await app.post('whatsapp', whatsapp)).toEqual({ status: 401, body: { error: 'MISSING_SIGNATURE' } });
+    expect(await app.post('whatsapp', whatsapp)).toMatchObject({ status: 401, body: { error: 'MISSING_SIGNATURE' } });
     const forged = { 'x-hub-signature-256': signature(whatsapp, 'guessed-secret') };
     expect((await app.post('whatsapp', whatsapp, forged)).status).toBe(401);
     // Signed by the email secret but sent with Meta's header: each endpoint checks its own scheme and secret.

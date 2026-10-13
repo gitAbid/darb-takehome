@@ -32,6 +32,14 @@ export class IntakeService {
   async intake(message: InboundMessage): Promise<InsertDocumentResult> {
     const scope = await this.deps.senders.resolve(senderOfMessage(message));
     const content = await this.loadContent(message);
+    if (!('failure' in content)) {
+      this.deps.logger.debug(LogEvents.MediaLoaded, {
+        externalId: message.externalId,
+        origin: message.content.kind,
+        mimeType: content.mimeType,
+        bytes: content.bytes.length,
+      });
+    }
     const document = await this.buildDocument(message, content, scope?.clientIds);
     const result = await this.deps.documents.insert(document);
     this.logResult(message, result);

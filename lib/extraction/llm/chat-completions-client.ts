@@ -1,3 +1,6 @@
+import { LogEvents } from '@/lib/logging/log-events';
+import type { Logger } from '@/lib/logging/logger';
+
 import { ExtractionFailedError } from '../extraction-errors';
 
 import type { ChatMessage, JsonSchema } from './extraction-prompt';
@@ -10,6 +13,14 @@ export interface CompletionRequest {
 /** One chat completion, returning the reply text. The seam that makes the extractor provider-agnostic. */
 export interface LlmClient {
   complete(request: CompletionRequest): Promise<string>;
+}
+
+/** How much of a provider's error body to log: enough for "invalid model" / "bad key", never a whole echo. */
+const ERROR_DETAIL_CHARS = 300;
+
+interface CompletionBody {
+  choices?: { message?: { content?: unknown } }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
 export interface OpenAiCompatibleSettings {
@@ -31,13 +42,25 @@ export interface OpenAiCompatibleSettings {
 export class OpenAiCompatibleClient implements LlmClient {
   constructor(
     private readonly settings: OpenAiCompatibleSettings,
+    private readonly logger: Logger,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
   async complete(request: CompletionRequest): Promise<string> {
+    const started = performance.now();
     const response = await this.send(request);
-    if (!response.ok) throw new ExtractionFailedError(`LLM request failed: HTTP ${response.status}`);
-    const body = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
+    const timing = { model: this.settings.model, status: response.status, durationMs: elapsedSince(started) };
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => '')).slice(0, ERROR_DETAIL_CHARS);
+      this.logger.warn(LogEvents.LlmFailed, { ...timing, detail });
+      throw new ExtractionFailedError(`LLM request failed: HTTP ${response.status}`);
+    }
+    const body = (await response.json()) as CompletionBody;
+    this.logger.debug(LogEvents.LlmCompleted, {
+      ...timing,
+      promptTokens: body.usage?.prompt_tokens ?? null,
+      completionTokens: body.usage?.completion_tokens ?? null,
+    });
     const content = body.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || content.trim() === '') throw new ExtractionFailedError('LLM reply was empty');
     return content;
@@ -68,4 +91,8 @@ export class OpenAiCompatibleClient implements LlmClient {
       throw new ExtractionFailedError(`LLM request ${reason}`);
     }
   }
+}
+
+function elapsedSince(started: number): number {
+  return Math.round(performance.now() - started);
 }

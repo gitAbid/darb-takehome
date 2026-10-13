@@ -7,6 +7,10 @@ import { buildPinoOptions, buildTransportTargets } from './pino-options';
 export class PinoLogger implements Logger {
   constructor(private readonly instance: PinoInstance) {}
 
+  debug(event: string, context?: LogContext): void {
+    this.instance.debug({ ...context, event }, event);
+  }
+
   info(event: string, context?: LogContext): void {
     this.instance.info({ ...context, event }, event);
   }

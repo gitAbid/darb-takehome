@@ -323,7 +323,7 @@ Configuration is validated at startup, and the app refuses to start with a messa
 |                    | `BLOB_DIR`                                                              | `.storage`                   | Where received document files are stored, by content hash     |
 |                    | `MEDIA_FETCH_TIMEOUT_MS`                                                | `3000`                       | WhatsApp media download timeout                               |
 | Logging            | `LOG_SINK`                                                              | `pino`                       | `pino` · `console` · `test`                                   |
-|                    | `LOG_LEVEL`                                                             | `info`                       |                                                               |
+|                    | `LOG_LEVEL`                                                             | `info`                       | `debug` adds fields read, scored candidates, LLM timings      |
 |                    | `LOG_FILE_ENABLED`                                                      | `true` (dev), `false` (prod) | Rotated, gzipped files under `LOG_DIR`                        |
 |                    | `LOG_DIR` · `LOG_ROTATE_SIZE` · `LOG_ROTATE_INTERVAL` · `LOG_MAX_FILES` | `logs` · `10M` · `1d` · `14` | File rotation                                                 |
 | Webhook signatures | `WHATSAPP_APP_SECRET`                                                   | unset (unsigned allowed)     | Verifies `X-Hub-Signature-256` on the WhatsApp webhook        |

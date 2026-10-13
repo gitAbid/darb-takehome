@@ -50,7 +50,9 @@ export class RematchService {
     for (const document of documents) {
       if (await this.rematch(document, transaction.id)) rematched += 1;
     }
-    return { examined: documents.length, rematched };
+    const summary = { examined: documents.length, rematched };
+    this.deps.logger.info(LogEvents.RematchCompleted, { transactionId: transaction.id, ...summary });
+    return summary;
   }
 
   /** Document dates that could pair with this transaction under any document type's window (+1 day slack). */

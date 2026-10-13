@@ -24,10 +24,10 @@ export class TransactionIngestionService {
 
   async receive(payload: unknown): Promise<TransactionIngestResult> {
     const parsed = transactionPayloadSchema.safeParse(payload);
-    if (!parsed.success) return { kind: 'invalid', issues: toPayloadIssues(parsed.error) };
+    if (!parsed.success) return this.reject(toPayloadIssues(parsed.error));
     const transaction = parsed.data;
     if (!(await this.deps.transactions.cardBelongsToClient(transaction.cardId, transaction.clientId))) {
-      return { kind: 'invalid', issues: [{ path: 'cardId', message: 'card does not belong to this client' }] };
+      return this.reject([{ path: 'cardId', message: 'card does not belong to this client' }]);
     }
     const inserted = await this.deps.transactions.insert(transaction);
     this.deps.logger.info(LogEvents.TransactionReceived, { transactionId: inserted.id, result: inserted.kind });
@@ -37,5 +37,13 @@ export class TransactionIngestionService {
       });
     }
     return { kind: inserted.kind, transactionId: inserted.id };
+  }
+
+  private reject(issues: PayloadIssue[]): TransactionIngestResult {
+    this.deps.logger.warn(LogEvents.WebhookRejected, {
+      channel: 'transactions',
+      issues: issues.map((issue) => issue.path),
+    });
+    return { kind: 'invalid', issues };
   }
 }

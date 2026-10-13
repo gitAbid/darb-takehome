@@ -1,5 +1,5 @@
 import type { Logger as PinoInstance } from 'pino';
-import { ConsoleLogger } from './console-logger';
+import { consoleDebug, ConsoleLogger } from './console-logger';
 import type { Logger } from './logger';
 import type { LoggingConfig } from './logging-config';
 import { createPinoInstance, PinoLogger } from './pino-logger';
@@ -15,7 +15,7 @@ export function createLogger(config: LoggingConfig, deps: LoggerFactoryDeps = {}
     case 'test':
       return new RecordingLogger();
     case 'console':
-      return new ConsoleLogger();
+      return new ConsoleLogger({}, undefined, config.level === 'debug' ? consoleDebug : null);
     case 'pino':
       return new PinoLogger((deps.createPino ?? createPinoInstance)(config));
   }

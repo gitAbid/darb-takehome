@@ -43,11 +43,15 @@ export class DocumentProcessor {
   }
 
   private async run(document: StoredDocument, logger: Logger): Promise<void> {
+    logger.debug(LogEvents.DocumentProcessing, { source: document.source, mimeType: document.mimeType });
+    const started = performance.now();
     const extraction = await this.extract(document);
     logger.info(LogEvents.ExtractionCompleted, {
       documentType: extraction.documentType,
       extractionConfidence: extraction.extractionConfidence,
+      durationMs: Math.round(performance.now() - started),
     });
+    logger.debug(LogEvents.ExtractionFields, extractedFields(extraction));
     const scope = await this.deps.senders.resolve(senderOfDocument(document));
     if (scope === null) logger.warn(LogEvents.SenderUnknown, { source: document.source });
     const result = await this.deps.matchStage.run({ documentId: document.id, from: 'EXTRACTED', extraction, scope });
@@ -75,6 +79,19 @@ export class DocumentProcessor {
       }
     }
   }
+}
+
+/** What was read, for debugging a wrong match. Card digits and OCR text are left out (privacy, ARCHITECTURE §7). */
+function extractedFields(extraction: ExtractedDocument): Record<string, unknown> {
+  return {
+    merchantName: extraction.merchantName,
+    totalAmount: extraction.totalAmount,
+    currency: extraction.currency,
+    documentDate: extraction.documentDate,
+    hasCardLast4: extraction.cardLast4 !== null,
+    hasVatNumber: extraction.vatNumber !== null,
+    invoiceNumber: extraction.invoiceNumber,
+  };
 }
 
 function failureReasonFor(error: unknown): string {

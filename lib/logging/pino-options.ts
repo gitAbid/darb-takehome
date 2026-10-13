@@ -1,5 +1,6 @@
 import path from 'node:path';
 import pino, { type LoggerOptions, type TransportTargetOptions } from 'pino';
+import { currentLogContext } from './log-context';
 import type { LoggingConfig } from './logging-config';
 import { buildRotatingFileTransportOptions } from './rotating-file-options';
 
@@ -23,10 +24,14 @@ export const DEFAULT_ROTATING_FILE_TRANSPORT = path.join(process.cwd(), 'lib/log
  */
 export const PINO_PRETTY_TRANSPORT = path.join(process.cwd(), 'node_modules/pino-pretty/index.js');
 
-/** Logger options. `redact` is the safety net behind the explicit masking done by `redact.ts`. */
+/**
+ * Logger options. `redact` is the safety net behind the explicit masking done by `redact.ts`; `mixin` adds the
+ * request's correlation context (`log-context.ts`) to every line.
+ */
 export function buildPinoOptions(config: LoggingConfig): LoggerOptions {
   return {
     level: config.level,
+    mixin: currentLogContext,
     redact: { paths: REDACT_PATHS, censor: REDACT_CENSOR },
     timestamp: pino.stdTimeFunctions.isoTime,
   };
