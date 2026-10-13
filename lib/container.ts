@@ -53,7 +53,8 @@ export interface ContainerOverrides {
   clock?: Clock;
 }
 
-let instance: Container | undefined;
+/** Kept on globalThis so dev hot reloads reuse it instead of re-spawning logger workers and re-hashing fixtures. */
+const globalForContainer = globalThis as unknown as { darbContainer?: Container };
 
 /** The composition root: the one place that decides which implementation backs each interface. */
 export function createContainer(config: AppConfig = loadAppConfig(), overrides: ContainerOverrides = {}): Container {
@@ -112,6 +113,6 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
 
 /** Process-wide container, built on first use. */
 export function getContainer(): Container {
-  instance ??= createContainer();
-  return instance;
+  globalForContainer.darbContainer ??= createContainer();
+  return globalForContainer.darbContainer;
 }

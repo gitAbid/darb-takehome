@@ -144,7 +144,8 @@ describe('Logger implementations', () => {
     expect(buildTransportTargets(buildConfig())).toEqual([
       { target: 'pino/file', level: 'info', options: { destination: 1 } },
     ]);
-    expect(buildTransportTargets(buildConfig({ pretty: true }))[0].target).toBe('pino-pretty');
+    // An absolute path, so pino never resolves a bare name from the (virtual) frames of the Next dev bundle.
+    expect(buildTransportTargets(buildConfig({ pretty: true }))[0].target).toBe(require.resolve('pino-pretty'));
     const file = { enabled: true, dir: '/tmp/logs', size: '5M', interval: '12h', maxFiles: 3 };
     expect(buildTransportTargets(buildConfig({ file }))[1]).toEqual({
       target: DEFAULT_ROTATING_FILE_TRANSPORT,

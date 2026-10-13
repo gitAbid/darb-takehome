@@ -5,6 +5,7 @@ import { DocumentNav } from '@/components/review/document-nav';
 import { DocumentPanel } from '@/components/review/document-panel';
 import { EmptyState } from '@/components/review/empty-state';
 import { KeyboardHints } from '@/components/review/keyboard-hints';
+import { NeighborPreloader } from '@/components/review/neighbor-preloader';
 import { QueueList } from '@/components/review/queue-list';
 import { StatusCounts } from '@/components/review/status-counts';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -58,6 +59,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
               <EmptyState />
             ) : (
               <div className="mx-auto max-w-6xl space-y-4 p-4 sm:p-6">
+                <NeighborPreloader documentIds={navigation.neighborIds} />
                 <DocumentNav {...navigation} />
                 <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] xl:gap-6">
                   <DocumentPanel document={view} />

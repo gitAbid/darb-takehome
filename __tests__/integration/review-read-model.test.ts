@@ -65,6 +65,9 @@ describe('review read model', () => {
     const response = await file(String(id));
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/jpeg');
+    // One container per process, reused across dev hot reloads (no re-spawned logger workers or fixture re-hashing).
+    const { getContainer } = await import('@/lib/container');
+    expect(getContainer()).toBe((globalThis as { darbContainer?: unknown }).darbContainer);
     expect(Buffer.from(await response.arrayBuffer())).toEqual(
       readFileSync(join(FIXTURES_DIR, 'scenarios', '03-restaurant-tip', 'document.jpg')),
     );

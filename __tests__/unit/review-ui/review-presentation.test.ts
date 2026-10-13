@@ -52,18 +52,27 @@ describe('review presentation', () => {
       nextHref: '/review?doc=11',
       prevHref: '/review?doc=7',
       position: '2 of 3',
+      neighborIds: [11, 7],
     });
     expect(queueNavigation([7, 8, 11], 11)).toEqual({
       nextHref: '/review?doc=7',
       prevHref: '/review?doc=8',
       position: '3 of 3',
+      neighborIds: [7, 8],
     });
     expect(queueNavigation([7, 8], 12)).toMatchObject({
       nextHref: '/review?doc=7',
       prevHref: null,
       position: '2 waiting',
+      neighborIds: [7],
     });
-    expect(queueNavigation([], null)).toEqual({ nextHref: '/review', prevHref: null, position: '0 waiting' });
+    expect(queueNavigation([7, 8], 8).neighborIds).toEqual([7]);
+    expect(queueNavigation([], null)).toEqual({
+      nextHref: '/review',
+      prevHref: null,
+      position: '0 waiting',
+      neighborIds: [],
+    });
   });
 
   it('formats money, Riyadh days and ages', () => {
