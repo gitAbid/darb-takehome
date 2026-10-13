@@ -18,7 +18,8 @@
     "test:coverage": "jest --coverage",
     "fixtures:render": "tsx scripts/fixtures/render-receipts.ts",
     "fixtures:payloads": "tsx scripts/fixtures/build-sample-payloads.ts",
-    "fixtures:sanitize": "tsx scripts/fixtures/sanitize-photo.ts"
+    "fixtures:sanitize": "tsx scripts/fixtures/sanitize-photo.ts",
+    "test:mix": "tsx scripts/quality/test-mix.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

@@ -1,3 +1,4 @@
+/** The auto-match gates and unmatched outcomes (IMPLEMENTATION.md §3.5–§3.6). */
 import { GatedDecisionPolicy } from '@/lib/services/matching/decision/gated-decision-policy';
 import { defaultMatchingConfig } from '@/lib/services/matching/matching-config';
 import type { ScoredCandidate } from '@/lib/services/matching/types';
@@ -19,21 +20,14 @@ function candidate(overrides: Partial<ScoredCandidate> = {}, id = 1): ScoredCand
 }
 
 describe('GatedDecisionPolicy', () => {
-  it('auto-matches a single candidate that passes every gate', () => {
-    expect(policy.decide(doc, [candidate()])).toMatchObject({ outcome: 'AUTO_MATCHED', reasons: ['ALL_GATES_PASSED'] });
-  });
-
-  it('auto-matches when the runner-up is exactly the minimum margin behind', () => {
+  it('auto-matches a top candidate that passes every gate, even with a runner-up exactly 0.10 behind', () => {
     const decision = policy.decide(doc, [candidate(), candidate({ confidence: 0.9 }, 2)]);
-    expect(decision.outcome).toBe('AUTO_MATCHED');
+    expect(decision).toMatchObject({ outcome: 'AUTO_MATCHED', reasons: ['ALL_GATES_PASSED'] });
     expect(decision.candidates).toHaveLength(2);
   });
 
-  it('returns NO_CANDIDATES when nothing survived the filters', () => {
+  it('is UNMATCHED · NO_CANDIDATES when nothing survived the filters, LOW_SCORE when all score below 0.50', () => {
     expect(policy.decide(doc, [])).toEqual({ outcome: 'UNMATCHED', reasons: ['NO_CANDIDATES'], candidates: [] });
-  });
-
-  it('returns LOW_SCORE when every survivor is below the review threshold', () => {
     expect(policy.decide(doc, [candidate({ confidence: 0.49 })])).toEqual({
       outcome: 'UNMATCHED',
       reasons: ['LOW_SCORE'],
@@ -42,59 +36,56 @@ describe('GatedDecisionPolicy', () => {
   });
 
   it.each([
-    ['score below 0.85', { confidence: 0.84 }, 'BELOW_AUTO_THRESHOLD'],
-    ['near (non-tip) amount', { signals: { amount: 0.5, date: 1, merchant: 1, card: 1 } }, 'AMOUNT_NOT_EXACT'],
-    ['no card and weak merchant', { signals: { amount: 1, date: 1, merchant: 0.79 } }, 'WEAK_IDENTITY'],
-    ['no card and no merchant', { signals: { amount: 1, date: 1 } }, 'WEAK_IDENTITY'],
+    ['score below 0.85', {}, { confidence: 0.84 }, ['BELOW_AUTO_THRESHOLD']],
+    ['a near (non-tip) amount', {}, { signals: { amount: 0.5, date: 1, merchant: 1, card: 1 } }, ['AMOUNT_NOT_EXACT']],
     [
-      'transaction already has a document',
-      { transaction: buildTransaction({ hasConfirmedDocument: true }) },
-      'TXN_ALREADY_HAS_DOCUMENT',
+      'a tip (reported once)',
+      {},
+      { signals: { amount: 0.7, date: 1, merchant: 1, card: 1 }, flags: ['AMOUNT_TIP_TOLERANCE' as const] },
+      ['AMOUNT_TIP_TOLERANCE'],
     ],
-    ['possible card misread flag', { flags: ['CARD_POSSIBLE_MISREAD' as const] }, 'CARD_POSSIBLE_MISREAD'],
-  ])('sends to review when %s', (_label, overrides, reason) => {
-    const decision = policy.decide(doc, [candidate(overrides)]);
-    expect(decision.outcome).toBe('NEEDS_REVIEW');
-    expect(decision.reasons).toContain(reason);
+    ['no card and merchant < 0.80', {}, { signals: { amount: 1, date: 1, merchant: 0.79 } }, ['WEAK_IDENTITY']],
+    ['OCR confidence < 0.80', { extractionConfidence: 0.79 }, {}, ['LOW_OCR_CONFIDENCE']],
+    ['unknown OCR confidence (NaN)', { extractionConfidence: Number.NaN }, {}, ['LOW_OCR_CONFIDENCE']],
+    [
+      'a transaction that already has a document',
+      {},
+      { transaction: buildTransaction({ hasConfirmedDocument: true }) },
+      ['TXN_ALREADY_HAS_DOCUMENT'],
+    ],
+    ['a possible card misread', {}, { flags: ['CARD_POSSIBLE_MISREAD' as const] }, ['CARD_POSSIBLE_MISREAD']],
+  ])('sends to review for %s', (_label, docOverrides, topOverrides, reasons) => {
+    const decision = policy.decide(buildPrepared(docOverrides), [candidate(topOverrides)]);
+    expect(decision).toMatchObject({ outcome: 'NEEDS_REVIEW', reasons });
   });
 
-  it('reports a tip once, as AMOUNT_TIP_TOLERANCE, not also as AMOUNT_NOT_EXACT', () => {
-    const tip = candidate({ signals: { amount: 0.7, date: 1, merchant: 1, card: 1 }, flags: ['AMOUNT_TIP_TOLERANCE'] });
-    expect(policy.decide(doc, [tip]).reasons).toEqual(['AMOUNT_TIP_TOLERANCE']);
-  });
-
-  it('accepts identity from a strong merchant alone', () => {
+  it('accepts identity from a strong merchant alone (no card on the receipt)', () => {
     expect(policy.decide(doc, [candidate({ signals: { amount: 1, date: 1, merchant: 0.8 } })]).outcome).toBe(
       'AUTO_MATCHED',
     );
   });
 
-  it('reports NEAR_TIE when the runner-up is within the margin', () => {
-    const decision = policy.decide(doc, [candidate(), candidate({ confidence: 0.95 }, 2)]);
-    expect(decision.reasons).toEqual(['NEAR_TIE']);
+  it('reports NEAR_TIE against any runner-up, but keeps only candidates ≥ 0.50, at most five', () => {
+    expect(policy.decide(doc, [candidate(), candidate({ confidence: 0.95 }, 2)]).reasons).toEqual(['NEAR_TIE']);
+    const lowPair = policy.decide(doc, [candidate({ confidence: 0.55 }), candidate({ confidence: 0.49 }, 2)]);
+    expect(lowPair.reasons).toEqual(['BELOW_AUTO_THRESHOLD', 'NEAR_TIE']);
+    expect(lowPair.candidates.map((c) => c.transaction.id)).toEqual([1]);
+    const many = Array.from({ length: 8 }, (_, index) => candidate({ confidence: 0.9 - index * 0.01 }, index + 1));
+    expect(policy.decide(doc, many).candidates).toHaveLength(5);
   });
 
-  it('considers a runner-up below the review threshold for the margin, but does not keep it', () => {
-    const decision = policy.decide(doc, [candidate({ confidence: 0.55 }), candidate({ confidence: 0.49 }, 2)]);
-    expect(decision.reasons).toEqual(expect.arrayContaining(['BELOW_AUTO_THRESHOLD', 'NEAR_TIE']));
-    expect(decision.candidates.map((c) => c.transaction.id)).toEqual([1]);
-  });
-
-  it.each([0.79, Number.NaN])('reports LOW_OCR_CONFIDENCE for extraction confidence %p', (extractionConfidence) => {
-    const lowOcr = buildPrepared({ extractionConfidence });
-    expect(policy.decide(lowOcr, [candidate()]).reasons).toEqual(['LOW_OCR_CONFIDENCE']);
-  });
-
-  it('lists every failed gate in canonical order', () => {
+  it('lists every failed gate once, in canonical order', () => {
     const bad = candidate({
       confidence: 0.6,
       signals: { amount: 0.5, date: 0.4 },
       flags: ['CARD_POSSIBLE_MISREAD'],
       transaction: buildTransaction({ hasConfirmedDocument: true }),
     });
-    expect(
-      policy.decide(buildPrepared({ extractionConfidence: 0.5 }), [bad, candidate({ confidence: 0.58 }, 2)]).reasons,
-    ).toEqual([
+    const decision = policy.decide(buildPrepared({ extractionConfidence: 0.5 }), [
+      bad,
+      candidate({ confidence: 0.58 }, 2),
+    ]);
+    expect(decision.reasons).toEqual([
       'BELOW_AUTO_THRESHOLD',
       'AMOUNT_NOT_EXACT',
       'WEAK_IDENTITY',
@@ -105,12 +96,7 @@ describe('GatedDecisionPolicy', () => {
     ]);
   });
 
-  it('keeps at most maxStoredCandidates plausible candidates', () => {
-    const many = Array.from({ length: 8 }, (_, index) => candidate({ confidence: 0.9 - index * 0.01 }, index + 1));
-    expect(policy.decide(doc, many).candidates).toHaveLength(5);
-  });
-
-  it('accepts custom gates (open for extension)', () => {
+  it('is open for extension with custom gates', () => {
     const strict = new GatedDecisionPolicy(defaultMatchingConfig, [{ reason: 'WEAK_IDENTITY', fails: () => true }]);
     expect(strict.decide(doc, [candidate()]).reasons).toEqual(['WEAK_IDENTITY']);
   });

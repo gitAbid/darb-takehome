@@ -31,17 +31,13 @@ describe('PrismaUnitOfWork', () => {
     expect(await db.document.count()).toBe(2);
   });
 
-  it('rolls back every write when the work throws', async () => {
+  it('rolls back every write when the work throws or a later write violates a database rule', async () => {
     await expect(
       unitOfWork.run(async ({ documents }) => {
         await documents.insert(newDocument('a'));
         throw new Error('boom');
       }),
     ).rejects.toThrow('boom');
-    expect(await db.document.count()).toBe(0);
-  });
-
-  it('rolls back when a later write violates a database rule', async () => {
     const { transaction } = await createTransactionGraph();
     const confirmed = {
       transactionId: transaction.id,
@@ -55,8 +51,8 @@ describe('PrismaUnitOfWork', () => {
     };
     await expect(
       unitOfWork.run(async ({ documents, matches }) => {
-        const first = await documents.insert(newDocument('a'));
-        const second = await documents.insert(newDocument('b'));
+        const first = await documents.insert(newDocument('b'));
+        const second = await documents.insert(newDocument('c'));
         if (first.kind !== 'created' || second.kind !== 'created') throw new Error('setup');
         await matches.createMany(first.id, [confirmed]);
         await matches.createMany(second.id, [confirmed]);

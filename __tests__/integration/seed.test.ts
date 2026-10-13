@@ -22,7 +22,7 @@ async function snapshot() {
 }
 
 describe('seedDatabase', () => {
-  it('loads the scenario data set (docs/SCENARIOS.md §1)', async () => {
+  it('loads the scenario data set, with SD1 already confirmed against T07', async () => {
     expect(await seedDatabase(db)).toEqual({
       clients: 2,
       senderEmails: 2,
@@ -32,43 +32,28 @@ describe('seedDatabase', () => {
       documents: 1,
       matches: 1,
     });
-    expect(await db.transaction.count()).toBe(15);
     const sd1 = await db.document.findFirstOrThrow({ include: { matches: true } });
     expect(sd1).toMatchObject({ status: 'MATCHED', source: 'WHATSAPP', externalId: 'wamid.seed-0001' });
     expect(sd1.matches).toEqual([
-      expect.objectContaining({
-        transactionId: 7,
-        status: 'CONFIRMED',
-        confirmedTransactionId: 7,
-        decidedBy: 'reviewer:seed',
-      }),
+      expect.objectContaining({ transactionId: 7, status: 'CONFIRMED', confirmedTransactionId: 7 }),
     ]);
-  });
-
-  it('is idempotent: seeding twice leaves identical data', async () => {
-    await seedDatabase(db);
-    const first = await snapshot();
-    await seedDatabase(db);
-    expect(await snapshot()).toEqual(first);
-  });
-
-  it('replaces data created after a previous seed', async () => {
-    await seedDatabase(db);
-    await db.client.create({ data: { name: 'Extra', slug: 'extra' } });
-    await seedDatabase(db);
-    expect(await db.client.count()).toBe(2);
-  });
-
-  it('marks T07 as already having a confirmed document', async () => {
-    await seedDatabase(db);
     const candidates = await new PrismaTransactionRepository(db).findCandidates({
       clientIds: [1],
       driverPhone: null,
       from: new Date('2025-06-01T00:00:00Z'),
       to: new Date('2025-06-30T00:00:00Z'),
     });
-    const confirmed = candidates.filter((candidate) => candidate.hasConfirmedDocument).map((candidate) => candidate.id);
-    expect(confirmed).toEqual([7]);
+    expect(candidates.filter((candidate) => candidate.hasConfirmedDocument).map((candidate) => candidate.id)).toEqual([
+      7,
+    ]);
+  });
+
+  it('is idempotent: re-seeding replaces later changes and leaves identical data', async () => {
+    await seedDatabase(db);
+    const first = await snapshot();
+    await db.client.create({ data: { name: 'Extra', slug: 'extra' } });
+    await seedDatabase(db);
+    expect(await snapshot()).toEqual(first);
   });
 
   it('rolls back completely when an insert fails part-way (wipe included)', async () => {

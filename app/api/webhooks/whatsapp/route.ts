@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
+import { getContainer } from '@/lib/container';
 
-// Inbound whatsapp webhook — implemented with the ingestion pipeline.
-export async function POST() {
-  return NextResponse.json({ error: 'Not implemented' }, { status: 501 });
+/** Inbound WhatsApp webhook — HTTP only; the pipeline lives in lib/services/document-ingestion.ts. */
+export function POST(request: Request): Promise<Response> {
+  return getContainer().webhooks.whatsapp(request);
 }

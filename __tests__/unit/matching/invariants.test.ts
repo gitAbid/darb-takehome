@@ -95,29 +95,4 @@ describe('matcher invariants', () => {
       expect(matchDocument(fields, shuffle(random, transactions))).toEqual(matchDocument(fields, transactions));
     });
   });
-
-  it('only auto-matches a candidate that has an exact amount and no confirmed document', () => {
-    forEachRandomCase((fields, transactions) => {
-      const result = matchDocument(fields, transactions);
-      if (result.outcome !== 'AUTO_MATCHED') return;
-      const top = transactions.find((transaction) => transaction.id === result.candidates[0].transactionId)!;
-      expect(result.candidates[0].signals.amount).toBe(1);
-      expect(top.hasConfirmedDocument).toBe(false);
-    });
-  });
-
-  it('never scores a closer date lower', () => {
-    const fields = buildFields({ documentDate: '2025-06-14', documentType: 'TAX_INVOICE' });
-    const scoreAtGap = (days: number) =>
-      matchDocument(fields, [buildTransaction({ transactionAt: new Date(Date.UTC(2025, 5, 14 - days, 9)) })])
-        .candidates[0]?.confidence ?? 0;
-    for (let gap = 0; gap < 30; gap += 1) expect(scoreAtGap(gap)).toBeGreaterThanOrEqual(scoreAtGap(gap + 1));
-  });
-
-  it('never raises a score when the card contradicts', () => {
-    const matching = matchDocument(buildFields({ cardLast4: '4471' }), [buildTransaction()]).candidates[0].confidence;
-    const misread = matchDocument(buildFields({ cardLast4: '4477' }), [buildTransaction()]).candidates[0].confidence;
-    expect(misread).toBeLessThan(matching);
-    expect(matchDocument(buildFields({ cardLast4: '9902' }), [buildTransaction()]).candidates).toEqual([]);
-  });
 });

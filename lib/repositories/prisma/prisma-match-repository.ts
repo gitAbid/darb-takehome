@@ -1,5 +1,6 @@
 import type { MatchRepository } from '../match-repository';
 import type { MatchDecision, MatchDecisionResult, NewMatch, StoredMatch } from '../records';
+import { ConfirmedSlotTakenError } from '../repository-errors';
 import { uniqueViolationFields } from './map-prisma-error';
 import { toDecisionData, toMatchCreateInput, toStoredMatch } from './match-mapper';
 import type { PrismaDb } from './prisma-db';
@@ -14,7 +15,13 @@ export class PrismaMatchRepository implements MatchRepository {
   /** One createMany statement: the candidate list is written atomically even outside a unit of work. */
   async createMany(documentId: number, matches: readonly NewMatch[]): Promise<void> {
     if (matches.length === 0) return;
-    await this.db.documentMatch.createMany({ data: matches.map((match) => toMatchCreateInput(documentId, match)) });
+    try {
+      await this.db.documentMatch.createMany({ data: matches.map((match) => toMatchCreateInput(documentId, match)) });
+    } catch (error) {
+      const field = conflictField(error);
+      if (field) throw new ConfirmedSlotTakenError(field);
+      throw error;
+    }
   }
 
   async findById(id: number): Promise<StoredMatch | null> {

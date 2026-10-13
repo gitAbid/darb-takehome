@@ -109,7 +109,7 @@ lib/
   prisma.ts · utils.ts · logger.ts    ◀ brief boilerplate, unchanged
   container.ts                        composition root: wires implementations to interfaces
   domain/                             pure types and helpers, no I/O
-    money.ts · riyadh-day.ts · clock.ts · statuses.ts · reason-codes.ts · errors.ts
+    riyadh-day · clock · statuses · reason-codes · content-hash · document-date · phone · with-timeout
   logging/
     logger.ts                         Logger interface
     console-logger.ts                 adapts the brief's lib/logger.ts
@@ -117,11 +117,15 @@ lib/
     recording-logger.ts               for tests
     redact.ts · serialize-error.ts
     transports/rotating-file.mjs      worker-thread transport on rotating-file-stream
+  config/app-config.ts                Zod-parsed environment (fail fast)
+  storage/                            BlobStore interface · LocalFileBlobStore (keys = content hashes)
   webhooks/
-    inbound-message.ts                channel-agnostic InboundMessage type
+    inbound-message.ts                channel-agnostic InboundMessage / AdaptedDelivery types
+    attachment-policy.ts · payload-issues.ts
     email/email-payload.schema.ts · email-adapter.ts
     whatsapp/whatsapp-payload.schema.ts · whatsapp-adapter.ts
-    http/webhook-response.ts          maps intake results → Response
+    http/webhook-handler.ts           JSON → service → 200 / 400 / 500
+    http/next-after-scheduler.ts      BackgroundScheduler on Next.js after()
   extraction/
     types.ts                          ◀ brief interface, verbatim
     mock-extractor.ts                 ◀ brief · hash → fixture result
@@ -137,12 +141,12 @@ lib/
     document-ingestion.ts             ◀ brief · facade: intake + process
     transaction-matcher.ts            ◀ brief · facade: matchDocument + public types
     ingestion/
-      intake-service.ts               validate scope, hash, insert-first dedupe
-      attachment-policy.ts            which attachments are documents (not logos)
-      sender-resolver.ts              alias → registered sender → phone → scope
-      content-hasher.ts               SHA-256
+      intake-service.ts               media fetch (timeout) → blob → insert-first dedupe
+      sender-resolver.ts · sender-identity.ts   alias → registered sender → phone → scope
       document-processor.ts           extract → match → persist (post-response)
-      document-state-machine.ts       allowed transitions + conditional updates
+      document-state-machine.ts       allowed transitions + guarded updates
+      match-persistence.ts            MatchResult → rows; race demotion
+      background-scheduler.ts         interface for post-response work
     matching/
       types.ts · matching-config.ts
       matcher.ts                      createMatcher(config) → matchDocument
@@ -448,6 +452,11 @@ Environment is parsed once with Zod at startup (`AppEnv`); invalid configuration
 | Integration | Repositories, intake, processor, review service, schema constraints                                     | Real SQLite: a migrated template copied per test file (`__tests__/setup/`) |
 | Route       | Both webhook `POST` handlers                                                                            | Call the exported handler with a `Request`; assert status + body + rows    |
 | Consistency | Seed ⇄ fixtures ⇄ scenario matrix                                                                       | One test that fails on drift                                               |
+
+Shape of the suite: **lean and rule-driven** — every business rule has at least one test and no rule is tested twice
+at the same layer ([`TEST-INVENTORY.md`](TEST-INVENTORY.md) maps each rule to its test). Target mix by count is 50 %
+unit / 30 % integration / 20 % end-to-end (`npm run test:mix`); scenario volume lives in one end-to-end table rather
+than in many unit tests.
 
 Rules:
 

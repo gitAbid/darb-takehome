@@ -1,3 +1,4 @@
+import { parseDocumentDate } from '@/lib/domain/document-date';
 import type { Document as DocumentRow, Prisma } from '@prisma/client';
 import { z } from 'zod';
 
@@ -5,7 +6,6 @@ import { REASON_CODES, type ReasonCode } from '@/lib/domain/reason-codes';
 
 import type { DocumentStatusChange, ExtractionSnapshot, NewDocument, StoredDocument } from '../records';
 
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const reasonsSchema = z.array(z.enum(REASON_CODES));
 
 export function toDocumentCreateInput(document: NewDocument): Prisma.DocumentUncheckedCreateInput {
@@ -44,12 +44,8 @@ export function toStatusChangeData(change: DocumentStatusChange): Prisma.Documen
  * Converts an extracted ISO date to the stored DateTime. A date-only value becomes UTC midnight of that calendar
  * date; anything unparseable becomes null rather than a wrong date.
  */
-export function toDocumentDate(value: string | null): Date | null {
-  if (value === null) return null;
-  const trimmed = value.trim();
-  const date = new Date(DATE_ONLY.test(trimmed) ? `${trimmed}T00:00:00.000Z` : trimmed);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
+/** Kept for existing callers; the rule lives in the domain layer. */
+export const toDocumentDate = parseDocumentDate;
 
 /** Parses JSON read back from the database; corrupt data raises instead of being silently cast. */
 export function parseStoredJson<T>(schema: z.ZodType<T>, value: unknown, description: string): T {

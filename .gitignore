@@ -51,3 +51,6 @@ coverage
 
 # test databases
 /.jest
+
+# document blobs
+/.storage

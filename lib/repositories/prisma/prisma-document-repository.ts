@@ -18,8 +18,21 @@ export class PrismaDocumentRepository implements DocumentRepository {
     } catch (error) {
       const field = duplicateField(error);
       if (field === null) throw error;
-      return { kind: 'duplicate', field };
+      return { kind: 'duplicate', field: await this.reportedDuplicateField(document, field) };
     }
+  }
+
+  /**
+   * A redelivery violates both unique constraints, but SQLite names only the first it checks. Report it as an
+   * externalId duplicate (same message again) rather than a contentHash one (same file in a new message).
+   */
+  private async reportedDuplicateField(document: NewDocument, violated: DedupeField): Promise<DedupeField> {
+    if (violated === 'externalId') return violated;
+    const sameMessage = await this.db.document.findUnique({
+      where: { externalId: document.externalId },
+      select: { id: true },
+    });
+    return sameMessage ? 'externalId' : violated;
   }
 
   async findById(id: number): Promise<StoredDocument | null> {
