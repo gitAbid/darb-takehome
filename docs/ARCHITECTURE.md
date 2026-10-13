@@ -126,10 +126,13 @@ lib/
     types.ts                          ◀ brief interface, verbatim
     mock-extractor.ts                 ◀ brief · hash → fixture result
     fixture-registry.ts               hashes fixture files at load
+    fixture-files.ts                  the only file-system reader for fixtures
     extraction-result.schema.ts       Zod: extractor output is untrusted
+    extraction-errors.ts              ExtractionFailedError · InvalidExtractionError
   media/
     media-store.ts                    MediaStore interface
     fixture-media-store.ts            media id → fixtures file
+    media-errors.ts                   MediaNotFoundError
   services/
     document-ingestion.ts             ◀ brief · facade: intake + process
     transaction-matcher.ts            ◀ brief · facade: matchDocument + public types
@@ -162,10 +165,13 @@ prisma/
   seed.ts                             ◀ brief · loader only
   seed-data/                          clients · cards · transactions · documents (from SCENARIOS.md)
 fixtures/                             ◀ brief
-  scenarios/<id>-<slug>/              document.* · extraction.json · payload*.json
-  media-map.json · ATTRIBUTION.md
+  scenarios/<id>-<slug>/              document.* · extraction.json · payload.json
+  payloads/ingestion/                 malformed / status-only / text / unknown-media payloads
+  print/                              80 mm receipts to print and photograph
+  assets/logo.png · media-map.json · ATTRIBUTION.md
 scripts/
-  fixtures/                           render-receipts.ts · sanitize-photo.ts · build-sample-payloads.ts
+  fixtures/                           render-receipts.ts · sanitize-photo.ts · build-sample-payloads.ts (CLIs)
+                                      + small modules: receipt-svg, render-image, render-pdf, payload-builders, …
   fire-webhooks.sh
 types/                                ◀ brief · webhook payload types inferred from the Zod schemas
 __tests__/                            ◀ brief (Jest only runs **/__tests__/**/*.test.ts)

@@ -1,0 +1,21 @@
+{
+  "entry": [
+    {
+      "changes": [
+        {
+          "value": {
+            "messages": [
+              {
+                "id": "wamid.I04-0001",
+                "from": "966551234567",
+                "timestamp": "1750410000",
+                "type": "text",
+                "text": { "body": "receipt coming" }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

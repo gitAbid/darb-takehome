@@ -1,0 +1,7 @@
+{
+  "messageId": "msg_I01",
+  "from": "fleet@najd-logistics.example",
+  "to": "receipts+najd@darb.example.com",
+  "subject": "Fwd: invoice",
+  "receivedAt": "2025-06-20T08:00:00Z"
+}

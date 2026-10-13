@@ -548,8 +548,13 @@ Each decision lists what was chosen, what was rejected, and why.
 - Riyadh has no daylight saving time, so "Riyadh day" is a fixed UTC+3 offset.
 - Provider timestamps (`receivedAt`, WhatsApp `timestamp`) are not used for matching. The spec's WhatsApp example
   timestamp `1718356881` is 2024-06-14 while its email example is 2025-06-14; we use the document's printed date.
-- Attachments other than PDF/JPEG/PNG/WebP/HEIC, or smaller than 8 KB (signature logos), are ignored.
+- Attachments other than PDF/JPEG/PNG/WebP/HEIC are ignored. **Images** smaller than 8 KB or named like
+  `logo`/`signature`/`banner`/`icon` are treated as email signature art and ignored; **PDFs are always documents**
+  (a text-only invoice PDF can legitimately be a few KB).
 - File bytes are referenced by `storageKey`; in this project the store is the `fixtures/` directory.
+- Four fixtures (01, 03, 09, 12) are meant to be phone photos of printed generated receipts
+  (`fixtures/print/`); until the photos are taken, rendered stand-ins are used. Replacing one is
+  `npm run fixtures:sanitize -- <photo> <folder>` then `npm run fixtures:payloads` (hashes are computed at load).
 
 ---
 
@@ -562,16 +567,16 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 | --- | ---------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | R1  | `POST /api/webhooks/email`                                                   | M4         | pending M4                                                                                                                     |
 | R2  | `POST /api/webhooks/whatsapp`                                                | M4         | pending M4                                                                                                                     |
-| R3  | `MediaStore` interface backed by a fixture map                               | M3         | pending M3                                                                                                                     |
+| R3  | `MediaStore` interface backed by a fixture map                               | M3         | `__tests__/unit/media/fixture-media-store.test.ts`, `fixtures-consistency.test.ts`                                             |
 | R4  | Zod validation; malformed → 400 with a useful body                           | M4         | pending M4                                                                                                                     |
 | R5  | Same message id → no duplicate document                                      | M4         | pending M4                                                                                                                     |
 | R6  | Same file content → no duplicate document                                    | M4         | pending M4                                                                                                                     |
 | R7  | Fast response; never 500 on extraction/matching failure                      | M4         | pending M4                                                                                                                     |
 | R8  | Sender phone/email scope matchable transactions                              | M1, M2, M4 | matcher `filters.test.ts`, `invariants.test.ts`; data `transaction-repository.test.ts`, `sender-directory.test.ts`; M4 pending |
 | R9  | `ExtractedDocument` / `DocumentExtractor` interfaces                         | setup      | `lib/extraction/types.ts` (verbatim)                                                                                           |
-| R10 | `MockExtractor` keyed by file hash                                           | M3         | pending M3                                                                                                                     |
-| R11 | ≥ 6 committed fixture documents                                              | M3         | pending M3                                                                                                                     |
-| R12 | Pipeline coded against the extractor interface                               | M3, M4     | pending                                                                                                                        |
+| R10 | `MockExtractor` keyed by file hash                                           | M3         | `__tests__/unit/extraction/mock-extractor.test.ts`, `fixture-registry.test.ts`                                                 |
+| R11 | ≥ 6 committed fixture documents                                              | M3         | 12 documents in `fixtures/scenarios/`; `fixtures-consistency.test.ts`                                                          |
+| R12 | Pipeline coded against the extractor interface                               | M3, M4     | `DocumentExtractor` interface + `extraction-result.schema.ts`; pipeline wiring M4 pending                                      |
 | R13 | Prisma schema                                                                | M2         | `prisma/schema.prisma` + init migration; `__tests__/integration/schema-constraints.test.ts`                                    |
 | R14 | Seed: ~15 transactions, 2 clients, sender mapping                            | M2         | `__tests__/integration/seed.test.ts` (counts, SD1, idempotent, rollback)                                                       |
 | R15 | Pure `matchDocument`, spec result shapes                                     | M1         | `__tests__/unit/matching/matcher.test.ts`, `scenarios.test.ts`                                                                 |
@@ -581,7 +586,7 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 | R19 | Mid confidence or near tie → `NEEDS_REVIEW`, ranked candidates persisted     | M1, M4     | pending                                                                                                                        |
 | R20 | Nothing plausible → `UNMATCHED`                                              | M1, M4     | pending                                                                                                                        |
 | R21 | Transaction with a confirmed document never auto-matches a second            | M1, M4     | pending                                                                                                                        |
-| R22 | Edge cases 1–6 in fixtures and tests                                         | M1, M3, M4 | pending                                                                                                                        |
+| R22 | Edge cases 1–6 in fixtures and tests                                         | M1, M3, M4 | matcher `scenarios.test.ts`; fixtures `fixtures-consistency.test.ts`; ingestion M4 pending                                     |
 | R23 | `confirmMatch` semantics                                                     | M5         | pending M5                                                                                                                     |
 | R24 | `rejectMatch` semantics                                                      | M5         | pending M5                                                                                                                     |
 | R25 | Double-submit safe; one confirmed document per transaction in the data layer | M2, M5     | data layer: `schema-constraints.test.ts`, `match-repository.test.ts` (decide conflict/stale); actions M5 pending               |

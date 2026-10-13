@@ -1,0 +1,25 @@
+{
+  "entry": [
+    {
+      "changes": [
+        {
+          "value": {
+            "messages": [
+              {
+                "id": "wamid.S09-0001",
+                "from": "966551234567",
+                "timestamp": "1750260000",
+                "type": "image",
+                "image": {
+                  "id": "media_0901",
+                  "mime_type": "image/jpeg",
+                  "sha256": "7ee6aaedfd9f4b48aee894c7295bf55f75ac298fde7f7d5325953779a848900e"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

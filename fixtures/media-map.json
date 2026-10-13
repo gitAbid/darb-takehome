@@ -1,0 +1,9 @@
+{
+  "media_0101": { "file": "scenarios/01-exact-match/document.jpg", "mimeType": "image/jpeg" },
+  "media_0102": { "file": "scenarios/01-exact-match/document.jpg", "mimeType": "image/jpeg" },
+  "media_0301": { "file": "scenarios/03-restaurant-tip/document.jpg", "mimeType": "image/jpeg" },
+  "media_0601": { "file": "scenarios/06-garbage-extraction/document.jpg", "mimeType": "image/jpeg" },
+  "media_0901": { "file": "scenarios/09-card-misread/document.jpg", "mimeType": "image/jpeg" },
+  "media_1201": { "file": "scenarios/12-back-to-back-refuel/document.jpg", "mimeType": "image/jpeg" },
+  "media_1301": { "file": "scenarios/13-foreign-currency/document.jpg", "mimeType": "image/jpeg" }
+}

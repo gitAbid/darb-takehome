@@ -1,0 +1,35 @@
+{
+  "entry": [
+    {
+      "changes": [
+        {
+          "value": {
+            "messages": [
+              {
+                "id": "wamid.I06-0001",
+                "from": "966551234567",
+                "timestamp": "1750410000",
+                "type": "image",
+                "image": {
+                  "id": "media_0101",
+                  "mime_type": "image/jpeg",
+                  "sha256": "0739571df3e7be05cb341f08ebba4498e98e64bdce768dc5985ec88da5ddbc44"
+                }
+              },
+              {
+                "id": "wamid.I06-0002",
+                "from": "966551234567",
+                "timestamp": "1750410000",
+                "type": "image",
+                "image": {
+                  "mime_type": "image/jpeg",
+                  "sha256": "0739571df3e7be05cb341f08ebba4498e98e64bdce768dc5985ec88da5ddbc44"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
