@@ -440,6 +440,7 @@ flowchart LR
 | ------------------------ | ------------------------------------------------ | -------------------------------------------- |
 | `DATABASE_URL`           | `file:./dev.db`                                  | SQLite database                              |
 | `FIXTURES_DIR`           | `fixtures`                                       | Mock extractor registry and media store root |
+| `BLOB_DIR`               | `.storage`                                       | Received document files, by content hash     |
 | `MEDIA_FETCH_TIMEOUT_MS` | `3000`                                           | WhatsApp media fetch timeout at intake       |
 | `LOG_SINK`               | `pino`                                           | `pino` · `console` · `test`                  |
 | `LOG_LEVEL`              | `info`                                           |                                              |
