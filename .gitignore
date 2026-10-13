@@ -58,3 +58,6 @@ coverage
 # IDE
 /.idea
 /.vscode
+
+# raw phone photos (may carry EXIF/GPS) — only sanitized copies are committed
+/fixtures/_incoming
