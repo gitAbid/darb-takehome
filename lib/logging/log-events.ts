@@ -2,6 +2,8 @@
 export const LogEvents = {
   WebhookReceived: 'webhook.received',
   WebhookRejected: 'webhook.rejected',
+  WebhookUnauthorized: 'webhook.unauthorized',
+  WebhookSignatureDisabled: 'webhook.signature_disabled',
   WebhookMessageIgnored: 'webhook.message_ignored',
   DocumentCreated: 'document.created',
   DocumentDuplicate: 'document.duplicate',

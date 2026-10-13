@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Fires every sample webhook payload at a running server, in scenario order (docs/SCENARIOS.md §3–§4).
 # Usage: scripts/demo/fire-webhooks.sh [base-url]   (default http://localhost:3000)
+# When the server has webhook secrets (B5), export the same ones here and every request is signed to match.
 set -euo pipefail
 
 BASE_URL="${1:-http://localhost:3000}"
@@ -8,11 +9,23 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCENARIOS="$ROOT/fixtures/scenarios"
 INGESTION="$ROOT/fixtures/payloads/ingestion"
 
+# Prints "<header>: sha256=<hmac>" for a body file, or nothing when that endpoint's secret is not set.
+signature_header() {
+  local header="$1" secret="$2" file="$3"
+  [ -z "$secret" ] && return 0
+  printf '%s: sha256=%s' "$header" "$(openssl dgst -sha256 -hmac "$secret" -hex < "$file" | sed 's/^.* //')"
+}
+
 post() {
-  local label="$1" channel="$2" file="$3"
+  local label="$1" channel="$2" file="$3" header
+  if [ "$channel" = whatsapp ]; then
+    header="$(signature_header x-hub-signature-256 "${WHATSAPP_APP_SECRET:-}" "$file")"
+  else
+    header="$(signature_header x-signature-256 "${EMAIL_WEBHOOK_SECRET:-}" "$file")"
+  fi
   printf '\n▶ %s\n  ' "$label"
-  curl -sS -X POST "$BASE_URL/api/webhooks/$channel" -H 'content-type: application/json' --data-binary "@$file" \
-    -w '  [HTTP %{http_code}]\n'
+  curl -sS -X POST "$BASE_URL/api/webhooks/$channel" -H 'content-type: application/json' ${header:+-H "$header"} \
+    --data-binary "@$file" -w '  [HTTP %{http_code}]\n'
 }
 
 post "S01 exact match (WhatsApp)"                    whatsapp "$SCENARIOS/01-exact-match/payload.json"
@@ -37,7 +50,11 @@ post "I05 unknown media → FAILED, not lost"           whatsapp "$INGESTION/i05
 post "I06 one invalid message in a valid delivery"    whatsapp "$INGESTION/i06-whatsapp-one-invalid-message.json"
 
 printf '\n▶ B2 card feed delivers S05'"'"'s transaction late → S05 re-matched\n  '
-curl -sS -X POST "$BASE_URL/api/transactions" -H 'content-type: application/json' -w '  [HTTP %{http_code}]\n' \
-  -d '{"externalRef":"feed-T16","clientId":1,"cardId":3,"driverPhone":"+966554445566","merchantName":"SAHARA AUTO SVC RUH","mcc":"7538","amount":34000,"transactionAt":"2025-06-15T08:00:00Z"}'
+FEED="$(mktemp)"
+trap 'rm -f "$FEED"' EXIT
+printf '%s' '{"externalRef":"feed-T16","clientId":1,"cardId":3,"driverPhone":"+966554445566","merchantName":"SAHARA AUTO SVC RUH","mcc":"7538","amount":34000,"transactionAt":"2025-06-15T08:00:00Z"}' > "$FEED"
+FEED_HEADER="$(signature_header x-signature-256 "${TRANSACTIONS_WEBHOOK_SECRET:-}" "$FEED")"
+curl -sS -X POST "$BASE_URL/api/transactions" -H 'content-type: application/json' ${FEED_HEADER:+-H "$FEED_HEADER"} \
+  --data-binary "@$FEED" -w '  [HTTP %{http_code}]\n'
 
 printf '\nDone. Processing runs after each response; see the outcome with: npm run db:report\n'

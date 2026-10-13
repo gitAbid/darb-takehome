@@ -306,6 +306,7 @@ The WhatsApp payload's own `sha256` is **not** trusted as the key — we hash th
 | Situation                                                    | Status | Body                                                                                                                                          |
 | ------------------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Accepted (any mix of created / duplicate / ignored messages) | 200    | `{ results: [{ externalId, result: 'created', documentId } \| { …, result: 'duplicate', duplicateOf } \| { …, result: 'ignored', reason }] }` |
+| Missing or wrong signature (secret configured, section 5.6)  | 401    | `{ error: 'MISSING_SIGNATURE' }` or `{ error: 'INVALID_SIGNATURE' }` — checked before the body is parsed                                      |
 | Malformed envelope                                           | 400    | `{ error: 'INVALID_PAYLOAD', issues: [{ path, message }] }`                                                                                   |
 | Could not persist (e.g. database down)                       | 500    | `{ error: 'INTERNAL' }` — nothing was saved, so the provider's retry is exactly what we want                                                  |
 
@@ -339,7 +340,46 @@ and it checks that the card belongs to the client. After the response, `RematchS
    rejected — so a human decision is never asked twice;
 4. isolates failures per document (logged, the rest continue; the transaction is already stored).
 
-In production this endpoint sits behind service authentication (or the HMAC verification of bonus B5).
+The card feed is authenticated like the webhooks (section 5.6, `TRANSACTIONS_WEBHOOK_SECRET`).
+
+### 5.6 Webhook authentication (bonus B5)
+
+Every inbound endpoint verifies an HMAC-SHA256 of the **raw request bytes** before anything else happens:
+
+| Endpoint                      | Header                | Secret                        | Scheme                                                  |
+| ----------------------------- | --------------------- | ----------------------------- | ------------------------------------------------------- |
+| `POST /api/webhooks/whatsapp` | `X-Hub-Signature-256` | `WHATSAPP_APP_SECRET`         | Meta's: `sha256=<hex HMAC of the body, app secret key>` |
+| `POST /api/webhooks/email`    | `X-Signature-256`     | `EMAIL_WEBHOOK_SECRET`        | Same format (assumption, D36)                           |
+| `POST /api/transactions`      | `X-Signature-256`     | `TRANSACTIONS_WEBHOOK_SECRET` | Same format                                             |
+| `GET /api/webhooks/whatsapp`  | —                     | `WHATSAPP_VERIFY_TOKEN`       | Meta's subscription handshake: echo `hub.challenge`     |
+
+```mermaid
+sequenceDiagram
+    participant P as Provider
+    participant H as Webhook handler
+    participant V as SignatureVerifier
+    participant I as Ingestion
+    P->>H: POST raw body + signature header
+    H->>V: verify(raw bytes, headers)
+    alt missing or wrong signature
+        V-->>H: MISSING_SIGNATURE / INVALID_SIGNATURE
+        H-->>P: 401 (logged as webhook.unauthorized, body never parsed)
+    else valid, or no secret configured
+        V-->>H: ok
+        H->>H: JSON.parse → Zod (400 if malformed)
+        H->>I: receive(payload)
+        H-->>P: 200 / 500 (section 5.3)
+    end
+```
+
+- `SignatureVerifier` is an interface (Strategy). `HmacSha256SignatureVerifier` compares with `timingSafeEqual`, so
+  response time does not reveal how much of a guessed signature was right. A provider with another scheme (Mailgun's
+  timestamp + token, SendGrid's ECDSA) is one new class, chosen in `lib/webhooks/security/create-verifiers.ts`.
+- **No secret configured → unsigned requests are accepted** and startup logs `webhook.signature_disabled` per
+  endpoint. That keeps `npm run dev` and the demo working without setup; `npm run demo:webhooks` signs every request
+  when the same secrets are exported.
+- **Replays** of a correctly signed delivery are harmless: Meta's signature has no timestamp, but the idempotency keys
+  (section 5.1) turn a replay into a `duplicate`.
 
 ## 6. Data model
 
@@ -570,42 +610,46 @@ Each decision lists what was chosen, what was rejected, and why.
 
 ### Design decisions
 
-| ID  | Decision                                                                                   | Rejected alternative                             | Why                                                                                                              |
-| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| D1  | Precision over recall                                                                      | Maximize auto-match rate                         | Section 2: a wrong attach is silent and costly; a review is cheap                                                |
-| D2  | Filters → weighted score → gates, with reason codes                                        | Plain weighted sum; Fellegi–Sunter               | Section 3.8                                                                                                      |
-| D3  | `mcc` on transactions; tip band only for MCC 5812/5814; tips never auto                    | Global ±20 % tolerance                           | A fuel station charging 20 % over its receipt would look plausible                                               |
-| D4  | Card last4 graded: equal / one-digit misread / filtered / absent                           | Hard veto on any mismatch                        | Thermal-paper OCR confuses `1`/`7`, `0`/`8`; a random different card differs in one digit only 0.4 % of the time |
-| D5  | `Card` entity (`clientId`, `last4`, `label`); `driverPhone` stays on `Transaction`         | Flat `cardLast4` string; `driverPhone` on `Card` | Makes shared last4 explicit; drivers share vehicle cards, so the driver belongs to the transaction               |
-| D6  | `contentHash` nullable                                                                     | Required hash                                    | A failed media fetch would otherwise lose the webhook                                                            |
-| D7  | Malformed envelope → 400; a bad message inside a valid envelope is skipped, 200            | 400 for the whole batch                          | Meta retries the whole delivery on non-2xx — one bad message would loop forever                                  |
-| D8  | Runners-up of an auto-match stored as `REJECTED` by `system`                               | Discard them                                     | Audit trail, and future training data                                                                            |
-| D9  | Same confirm twice = no-op; confirming a sibling or rejected match = error                 | Error on every repeat                            | Double-clicks are normal; conflicting decisions are not                                                          |
-| D10 | `storageKey` + `mimeType` on `Document`                                                    | Store bytes in the database                      | A reviewer must see the file; blobs belong in object storage                                                     |
-| D11 | Scope filtered in the query **and** re-checked in the matcher (`signals.scope`)            | Query only                                       | Defence in depth; the spec lists scoping as a signal                                                             |
-| D12 | Unmeasurable signals omitted from `signals`; `reasons`/`flags` added                       | `null` values                                    | Keeps the spec's `Record<string, number>` type                                                                   |
-| D13 | Persist → respond → `after()` for extraction + matching                                    | Synchronous processing; a queue                  | Fast responses without infrastructure; a queue is the production path (risk register)                            |
-| D14 | Extractor/media failures → `FAILED`; extracted-but-unusable → `UNMATCHED` + reason         | Everything `FAILED`                              | `FAILED` means "system problem, retry"; `UNMATCHED` means "a human should look"                                  |
-| D15 | Ingestion tests on a real SQLite test database                                             | Mocked Prisma                                    | Idempotency is a unique-constraint property; only a real database proves it                                      |
-| D16 | No status-history table                                                                    | `DocumentEvent` audit table                      | Final state + `decidedBy`/`decidedAt`/`failureReason` answer who/when/why; history under more time               |
-| D17 | WhatsApp media fetched and hashed **during** the request (3 s timeout)                     | Fetch in the background                          | Content dedupe must happen before the row exists; otherwise duplicates need a merge state                        |
-| D18 | Amount plausibility is a **filter** (directional, MCC-aware)                               | Amount as a score only                           | Stops strong merchant/date/card from dragging a different purchase into review                                   |
-| D19 | `MatchResult.excluded` counts per filter                                                   | Only return survivors                            | Explains _why_ nothing matched ("4 removed by currency")                                                         |
-| D20 | Generic category words weigh 0.3 in merchant similarity                                    | All tokens equal                                 | `rawabi fuel` vs `alfanar fuel` must not score 0.5 just for sharing `fuel`                                       |
-| D21 | Store numbers dropped during normalization                                                 | Keep them                                        | Section 4 trade-off: avoids confident wrong matches from misread station numbers                                 |
-| D22 | `Driver` table for phone → client(s)                                                       | Derive clients from `Transaction.driverPhone`    | Explicit mapping the brief asks for; a new driver is known before their first transaction                        |
-| D23 | Each test file gets its own migrated SQLite copy                                           | One shared test database                         | Parallel Jest workers never interfere; tests run against the real schema and `CHECK`s                            |
-| D24 | Bytes go to a `BlobStore` keyed by content hash before the insert                          | Keep bytes in memory for `after()`               | Processing, reprocessing and the reviewer all read the same stored file; a crash loses no bytes                  |
-| D25 | `BackgroundScheduler` interface (`after()` in production, inline in tests)                 | Call `after()` directly                          | Services stay framework-free; tests await post-response work deterministically                                   |
-| D26 | A redelivery is reported as an `externalId` duplicate even though it also repeats the hash | Report whichever constraint SQLite names first   | The result must say _why_ it was a duplicate: same message vs same file in a new message                         |
-| D27 | An auto-match that loses the confirmed-slot race is re-saved as `NEEDS_REVIEW`             | Fail the document                                | The database stops the double confirmation; the document still reaches a human                                   |
-| D28 | Review outcomes are values; a lost race re-reads the match                                 | Throw on every non-update                        | A double-click must succeed quietly, while a genuine conflict must be shown to the reviewer                      |
-| D29 | One `MatchStage` shared by first-time processing and re-matching                           | A separate re-match matcher                      | Both paths must follow identical rules; one implementation cannot drift                                          |
-| D30 | `Transaction.externalRef` unique, added by an additive migration                           | Trust the feed not to redeliver                  | Same idempotency principle as the webhooks; additive `ALTER TABLE` keeps the hand-written `CHECK`s intact        |
-| D31 | Re-matching excludes transactions already proposed for the document                        | Re-propose everything                            | A reviewer's rejection is a decision; asking again wastes their time and invites a wrong confirm                 |
-| D32 | Look-alike candidates are not pre-selected in the UI                                       | Pre-select the top candidate everywhere          | A one-key default on a coin flip invites exactly the silent wrong match section 2 forbids                        |
-| D33 | Server components + two small client islands (candidate board, tooltips)                   | A client-side SPA fetching JSON                  | Less JavaScript, no loading waterfalls, data rendered where the database is                                      |
-| D34 | Separate read model (`ReviewQueueReader`) from decisions (`ReviewService`)                 | One service for both                             | Queries can be shaped for the screen without touching the invariant-enforcing write path                         |
+| ID  | Decision                                                                                   | Rejected alternative                             | Why                                                                                                               |
+| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| D1  | Precision over recall                                                                      | Maximize auto-match rate                         | Section 2: a wrong attach is silent and costly; a review is cheap                                                 |
+| D2  | Filters → weighted score → gates, with reason codes                                        | Plain weighted sum; Fellegi–Sunter               | Section 3.8                                                                                                       |
+| D3  | `mcc` on transactions; tip band only for MCC 5812/5814; tips never auto                    | Global ±20 % tolerance                           | A fuel station charging 20 % over its receipt would look plausible                                                |
+| D4  | Card last4 graded: equal / one-digit misread / filtered / absent                           | Hard veto on any mismatch                        | Thermal-paper OCR confuses `1`/`7`, `0`/`8`; a random different card differs in one digit only 0.4 % of the time  |
+| D5  | `Card` entity (`clientId`, `last4`, `label`); `driverPhone` stays on `Transaction`         | Flat `cardLast4` string; `driverPhone` on `Card` | Makes shared last4 explicit; drivers share vehicle cards, so the driver belongs to the transaction                |
+| D6  | `contentHash` nullable                                                                     | Required hash                                    | A failed media fetch would otherwise lose the webhook                                                             |
+| D7  | Malformed envelope → 400; a bad message inside a valid envelope is skipped, 200            | 400 for the whole batch                          | Meta retries the whole delivery on non-2xx — one bad message would loop forever                                   |
+| D8  | Runners-up of an auto-match stored as `REJECTED` by `system`                               | Discard them                                     | Audit trail, and future training data                                                                             |
+| D9  | Same confirm twice = no-op; confirming a sibling or rejected match = error                 | Error on every repeat                            | Double-clicks are normal; conflicting decisions are not                                                           |
+| D10 | `storageKey` + `mimeType` on `Document`                                                    | Store bytes in the database                      | A reviewer must see the file; blobs belong in object storage                                                      |
+| D11 | Scope filtered in the query **and** re-checked in the matcher (`signals.scope`)            | Query only                                       | Defence in depth; the spec lists scoping as a signal                                                              |
+| D12 | Unmeasurable signals omitted from `signals`; `reasons`/`flags` added                       | `null` values                                    | Keeps the spec's `Record<string, number>` type                                                                    |
+| D13 | Persist → respond → `after()` for extraction + matching                                    | Synchronous processing; a queue                  | Fast responses without infrastructure; a queue is the production path (risk register)                             |
+| D14 | Extractor/media failures → `FAILED`; extracted-but-unusable → `UNMATCHED` + reason         | Everything `FAILED`                              | `FAILED` means "system problem, retry"; `UNMATCHED` means "a human should look"                                   |
+| D15 | Ingestion tests on a real SQLite test database                                             | Mocked Prisma                                    | Idempotency is a unique-constraint property; only a real database proves it                                       |
+| D16 | No status-history table                                                                    | `DocumentEvent` audit table                      | Final state + `decidedBy`/`decidedAt`/`failureReason` answer who/when/why; history under more time                |
+| D17 | WhatsApp media fetched and hashed **during** the request (3 s timeout)                     | Fetch in the background                          | Content dedupe must happen before the row exists; otherwise duplicates need a merge state                         |
+| D18 | Amount plausibility is a **filter** (directional, MCC-aware)                               | Amount as a score only                           | Stops strong merchant/date/card from dragging a different purchase into review                                    |
+| D19 | `MatchResult.excluded` counts per filter                                                   | Only return survivors                            | Explains _why_ nothing matched ("4 removed by currency")                                                          |
+| D20 | Generic category words weigh 0.3 in merchant similarity                                    | All tokens equal                                 | `rawabi fuel` vs `alfanar fuel` must not score 0.5 just for sharing `fuel`                                        |
+| D21 | Store numbers dropped during normalization                                                 | Keep them                                        | Section 4 trade-off: avoids confident wrong matches from misread station numbers                                  |
+| D22 | `Driver` table for phone → client(s)                                                       | Derive clients from `Transaction.driverPhone`    | Explicit mapping the brief asks for; a new driver is known before their first transaction                         |
+| D23 | Each test file gets its own migrated SQLite copy                                           | One shared test database                         | Parallel Jest workers never interfere; tests run against the real schema and `CHECK`s                             |
+| D24 | Bytes go to a `BlobStore` keyed by content hash before the insert                          | Keep bytes in memory for `after()`               | Processing, reprocessing and the reviewer all read the same stored file; a crash loses no bytes                   |
+| D25 | `BackgroundScheduler` interface (`after()` in production, inline in tests)                 | Call `after()` directly                          | Services stay framework-free; tests await post-response work deterministically                                    |
+| D26 | A redelivery is reported as an `externalId` duplicate even though it also repeats the hash | Report whichever constraint SQLite names first   | The result must say _why_ it was a duplicate: same message vs same file in a new message                          |
+| D27 | An auto-match that loses the confirmed-slot race is re-saved as `NEEDS_REVIEW`             | Fail the document                                | The database stops the double confirmation; the document still reaches a human                                    |
+| D28 | Review outcomes are values; a lost race re-reads the match                                 | Throw on every non-update                        | A double-click must succeed quietly, while a genuine conflict must be shown to the reviewer                       |
+| D29 | One `MatchStage` shared by first-time processing and re-matching                           | A separate re-match matcher                      | Both paths must follow identical rules; one implementation cannot drift                                           |
+| D30 | `Transaction.externalRef` unique, added by an additive migration                           | Trust the feed not to redeliver                  | Same idempotency principle as the webhooks; additive `ALTER TABLE` keeps the hand-written `CHECK`s intact         |
+| D31 | Re-matching excludes transactions already proposed for the document                        | Re-propose everything                            | A reviewer's rejection is a decision; asking again wastes their time and invites a wrong confirm                  |
+| D32 | Look-alike candidates are not pre-selected in the UI                                       | Pre-select the top candidate everywhere          | A one-key default on a coin flip invites exactly the silent wrong match section 2 forbids                         |
+| D33 | Server components + two small client islands (candidate board, tooltips)                   | A client-side SPA fetching JSON                  | Less JavaScript, no loading waterfalls, data rendered where the database is                                       |
+| D34 | Separate read model (`ReviewQueueReader`) from decisions (`ReviewService`)                 | One service for both                             | Queries can be shaped for the screen without touching the invariant-enforcing write path                          |
+| D35 | Verify the HMAC over the raw bytes, before JSON parsing                                    | Verify after parsing / on re-serialized JSON     | Re-serialized JSON changes bytes and breaks valid signatures; unauthenticated input should never reach a parser   |
+| D36 | Email and card feed use Meta's `sha256=` HMAC format under `X-Signature-256`               | Pick one email provider's scheme now             | The brief names no email provider; one well-known format behind an interface is swapped per provider in one class |
+| D37 | An endpoint without a secret accepts unsigned requests and logs a warning at startup       | Refuse every request until secrets are set       | Clone-and-run must keep working for reviewers; the warning makes the open door visible (risk register)            |
+| D38 | Review UI prefetches the next/previous document and caches visited ones for 30 s           | Client-side SPA fetching JSON per document       | Instant J/K with the existing server components; decisions still refresh, and guarded writes catch stale views    |
 
 ---
 
@@ -675,7 +719,7 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 | B2  | Bonus: re-match `UNMATCHED` documents when transactions arrive               | M8         | `e2e/rematch.e2e.test.ts`; `integration/ingestion/rematch-isolation.test.ts` (§5.5)                                                                     |
 | B3  | Bonus: multi-transaction invoice design sketch                               | M7         | design in §12 (not built)                                                                                                                               |
 | B4  | Bonus: real extractor behind the interface, mock by default                  | M11        | not built (optional M11)                                                                                                                                |
-| B5  | Bonus: HMAC signature verification                                           | M10        | not built yet (planned M10)                                                                                                                             |
+| B5  | Bonus: HMAC signature verification                                           | M10        | `unit/webhooks/signature-verification.test.ts`; `e2e/webhooks.e2e.test.ts` › "webhook authentication (bonus B5)" (section 5.6)                          |
 
 ---
 
@@ -690,6 +734,7 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 | A transient media/extraction failure becomes a terminal `FAILED` | Document needs manual handling                | `FAILED` is queryable with a reason                                         | Retry policy in the queue                      |
 | Re-photographed duplicates have different bytes                  | Second document for the same purchase         | `TXN_ALREADY_HAS_DOCUMENT` gate sends it to review                          | Perceptual hashing                             |
 | SQLite allows a single writer                                    | Throughput ceiling                            | Fine for the exercise                                                       | Postgres                                       |
+| Webhook secrets left unset in production                         | Anyone can post documents or transactions     | `webhook.signature_disabled` warning at startup per endpoint (D37)          | Fail startup in production without secrets     |
 
 ---
 

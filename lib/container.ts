@@ -30,6 +30,8 @@ import { TransactionIngestionService } from './services/transactions/transaction
 import { NextAfterScheduler } from './webhooks/http/next-after-scheduler';
 import { createTransactionHandler } from './webhooks/http/transaction-handler';
 import { createWebhookHandler, type WebhookHandler } from './webhooks/http/webhook-handler';
+import { createWebhookVerifiers } from './webhooks/security/create-verifiers';
+import { createWhatsAppVerificationHandler } from './webhooks/whatsapp/verification-handshake';
 
 export interface Container {
   ingestion: DocumentIngestion;
@@ -37,7 +39,7 @@ export interface Container {
   review: ReviewService;
   reviewQueue: ReviewQueueReader;
   documentFiles: DocumentFileService;
-  webhooks: { email: WebhookHandler; whatsapp: WebhookHandler };
+  webhooks: { email: WebhookHandler; whatsapp: WebhookHandler; whatsappVerification: WebhookHandler };
   transactions: WebhookHandler;
   logger: Logger;
 }
@@ -96,6 +98,7 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
     scheduler,
     logger,
   });
+  const verifiers = createWebhookVerifiers(config.webhookSecurity, logger);
   return {
     ingestion,
     processor,
@@ -104,10 +107,15 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
     documentFiles: new DocumentFileService(repositories.documents, blobStore),
     logger,
     webhooks: {
-      email: createWebhookHandler((payload) => ingestion.receiveEmail(payload), logger),
-      whatsapp: createWebhookHandler((payload) => ingestion.receiveWhatsApp(payload), logger),
+      email: createWebhookHandler((payload) => ingestion.receiveEmail(payload), verifiers.email, logger),
+      whatsapp: createWebhookHandler((payload) => ingestion.receiveWhatsApp(payload), verifiers.whatsapp, logger),
+      whatsappVerification: createWhatsAppVerificationHandler(config.webhookSecurity.whatsappVerifyToken, logger),
     },
-    transactions: createTransactionHandler((payload) => transactionIngestion.receive(payload), logger),
+    transactions: createTransactionHandler(
+      (payload) => transactionIngestion.receive(payload),
+      verifiers.transactions,
+      logger,
+    ),
   };
 }
 

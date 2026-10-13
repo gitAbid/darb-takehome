@@ -2,6 +2,7 @@
  * End-to-end: real webhook handlers → adapters → intake → extraction → matching → database, driven by the committed
  * scenario payloads (docs/SCENARIOS.md §3–§4). Each row asserts what a reviewer or auditor would see.
  */
+import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -211,5 +212,62 @@ describe('idempotency and delivery behaviour (docs/SCENARIOS.md §4)', () => {
     expect(response).toEqual({ status: 500, body: { error: 'INTERNAL' } });
     expect(app.logger.entries.some((entry) => entry.level === 'error')).toBe(true);
     await unreachable.$disconnect();
+  });
+});
+
+describe('webhook authentication (bonus B5)', () => {
+  const SECRETS = {
+    WHATSAPP_APP_SECRET: 'meta-app-secret',
+    WHATSAPP_VERIFY_TOKEN: 'verify-me',
+    EMAIL_WEBHOOK_SECRET: 'mail-secret',
+    TRANSACTIONS_WEBHOOK_SECRET: 'feed-secret',
+  };
+  const signature = (body: string, secret: string) =>
+    `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
+
+  it('accepts only correctly signed deliveries, and an unauthenticated one never reaches the database', async () => {
+    const app = createTestApp({}, SECRETS);
+    const whatsapp = JSON.stringify(payload('01-exact-match'));
+    const email = JSON.stringify(payload('05-invoice-no-transaction'));
+    const feed = JSON.stringify({
+      externalRef: 'feed-signed',
+      clientId: 1,
+      cardId: 3,
+      merchantName: 'X',
+      mcc: '5541',
+      amount: 100,
+      transactionAt: '2025-06-15T08:00:00Z',
+    });
+    const before = { documents: await db.document.count(), transactions: await db.transaction.count() };
+
+    expect(await app.post('whatsapp', whatsapp)).toEqual({ status: 401, body: { error: 'MISSING_SIGNATURE' } });
+    const forged = { 'x-hub-signature-256': signature(whatsapp, 'guessed-secret') };
+    expect((await app.post('whatsapp', whatsapp, forged)).status).toBe(401);
+    // Signed by the email secret but sent with Meta's header: each endpoint checks its own scheme and secret.
+    expect(
+      (await app.post('email', email, { 'x-hub-signature-256': signature(email, SECRETS.EMAIL_WEBHOOK_SECRET) }))
+        .status,
+    ).toBe(401);
+    expect((await app.postTransaction(feed)).status).toBe(401);
+    expect({ documents: await db.document.count(), transactions: await db.transaction.count() }).toEqual(before);
+    expect(app.logger.find('webhook.unauthorized')).toHaveLength(4);
+
+    const signed = { 'x-hub-signature-256': signature(whatsapp, SECRETS.WHATSAPP_APP_SECRET) };
+    expect((await app.post('whatsapp', whatsapp, signed)).status).toBe(200);
+    expect(
+      (await app.post('email', email, { 'x-signature-256': signature(email, SECRETS.EMAIL_WEBHOOK_SECRET) })).status,
+    ).toBe(200);
+    expect(
+      (await app.postTransaction(feed, { 'x-signature-256': signature(feed, SECRETS.TRANSACTIONS_WEBHOOK_SECRET) }))
+        .status,
+    ).toBe(201);
+    expect((await documentOutcome('wamid.S01-0001')).status).toBe('MATCHED');
+  });
+
+  it("answers Meta's subscription handshake through the WhatsApp GET route", async () => {
+    const app = createTestApp({}, SECRETS);
+    const ok = await app.verifyWhatsApp('hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=42');
+    expect([ok.status, await ok.text()]).toEqual([200, '42']);
+    expect((await app.verifyWhatsApp('hub.mode=subscribe&hub.verify_token=nope&hub.challenge=42')).status).toBe(403);
   });
 });

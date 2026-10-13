@@ -202,8 +202,20 @@ pipeline → database. Check the mix with `npm run test:mix` (target 50 / 30 / 2
 | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Amount / date / card differences described in reviewer language (tip, misread, days apart)  | `unit/review-ui/review-presentation.test.ts` › "explains amount, date and card differences…"                               |
 | Every reason code has reviewer copy                                                         | `unit/review-ui/review-presentation.test.ts` › "has reviewer copy for every reason code…"                                  |
-| J/K navigation, including after the current document leaves the queue                       | `unit/review-ui/review-presentation.test.ts` › "navigates the queue…"                                                      |
+| J/K navigation (and the neighbours preloaded), including after the current document leaves  | `unit/review-ui/review-presentation.test.ts` › "navigates the queue…"                                                      |
 | View models: measurable signals only, graceful fallbacks, both channels                     | `unit/review-ui/review-presentation.test.ts` › "builds the document view…", "falls back gracefully…", "builds queue rows…" |
 | Queue is NEEDS_REVIEW oldest first with pending counts; status totals; detail with cards    | `integration/review-read-model.test.ts` › "lists NEEDS_REVIEW documents oldest first…"                                     |
 | Original file served; 404 for unknown, invalid or missing blobs                             | `integration/review-read-model.test.ts` › "serves the original file…"                                                      |
 | Look-alikes not pre-selected; keyboard pick → confirm → auto-advance; DB conflict explained | Browser verification (IMPLEMENTATION.md §7.1)                                                                              |
+| One container per process, reused across dev hot reloads                                    | `integration/review-read-model.test.ts` › "serves the original file…"                                                      |
+| Dev logger targets resolve outside the bundle (pino-pretty by absolute path)                | `unit/logging/logging.test.ts` › "routes output to stdout…"                                                                |
+
+## Webhook authentication (bonus B5)
+
+| Rule                                                                                              | Test                                                                                            |
+| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| HMAC over the exact raw bytes; missing, forged, truncated, unprefixed or re-serialized → rejected | `unit/webhooks/signature-verification.test.ts` › "accepts only the exact raw body…" (8 cases)   |
+| HMAC only where a secret is set; every unsigned endpoint warned at startup                        | `unit/webhooks/signature-verification.test.ts` › "uses HMAC only where a secret is configured…" |
+| Meta handshake echoes the challenge only for subscribe + our token; otherwise 403                 | `unit/webhooks/signature-verification.test.ts` › "WhatsApp subscription handshake" (5 cases)    |
+| All three endpoints: 401 before parsing, nothing stored, logged; signed deliveries processed      | `e2e/webhooks.e2e.test.ts` › "accepts only correctly signed deliveries…"                        |
+| GET handshake served through the WhatsApp route                                                   | `e2e/webhooks.e2e.test.ts` › "answers Meta's subscription handshake…"                           |

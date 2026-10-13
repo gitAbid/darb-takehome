@@ -116,6 +116,13 @@ All optional except `DATABASE_URL`; see [`.env.example`](.env.example). Configur
 fast with the offending variable. In production, logs go to stdout (set `LOG_FILE_ENABLED=true` for rotated, gzipped
 files under `logs/`).
 
+**Webhook signatures (bonus B5).** Set `WHATSAPP_APP_SECRET`, `EMAIL_WEBHOOK_SECRET` and
+`TRANSACTIONS_WEBHOOK_SECRET` to require an HMAC-SHA256 signature (`X-Hub-Signature-256` for WhatsApp,
+`X-Signature-256` otherwise); unsigned or wrongly signed requests get `401`. `WHATSAPP_VERIFY_TOKEN` answers Meta's
+`GET` subscription handshake. Unset secrets accept unsigned requests (a warning is logged), so local runs need no setup.
+To fire signed demo requests, export the same secrets before `npm run demo:webhooks`. Details:
+[IMPLEMENTATION.md §5.6](IMPLEMENTATION.md#56-webhook-authentication-bonus-b5).
+
 ## Project layout
 
 ```text

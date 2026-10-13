@@ -4,3 +4,8 @@ import { getContainer } from '@/lib/container';
 export function POST(request: Request): Promise<Response> {
   return getContainer().webhooks.whatsapp(request);
 }
+
+/** Meta's subscription handshake (echoes hub.challenge when hub.verify_token is ours). */
+export function GET(request: Request): Promise<Response> {
+  return getContainer().webhooks.whatsappVerification(request);
+}

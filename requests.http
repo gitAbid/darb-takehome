@@ -112,3 +112,12 @@ Content-Type: application/json
   "amount": 34000,
   "transactionAt": "2025-06-15T08:00:00Z"
 }
+
+### B5 — Meta's subscription handshake → 200 "1158201444" when WHATSAPP_VERIFY_TOKEN=verify-me, else 403
+GET {{base}}/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=1158201444
+
+### B5 — with WHATSAPP_APP_SECRET set, an unsigned delivery → 401 MISSING_SIGNATURE (signed: npm run demo:webhooks)
+POST {{base}}/api/webhooks/whatsapp
+Content-Type: application/json
+
+{ "entry": [] }

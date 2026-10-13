@@ -15,7 +15,7 @@ import { db } from './test-database';
 export const FIXTURES_DIR = join(__dirname, '..', '..', 'fixtures');
 
 /** The real application wired for tests: real DB, fixtures and services; inline scheduler, recorded logs, fixed clock. */
-export function createTestApp(overrides: ContainerOverrides = {}) {
+export function createTestApp(overrides: ContainerOverrides = {}, env: Record<string, string> = {}) {
   const scheduler = new InlineScheduler();
   const logger = new RecordingLogger();
   const config = loadAppConfig({
@@ -23,6 +23,7 @@ export function createTestApp(overrides: ContainerOverrides = {}) {
     BLOB_DIR: process.env.BLOB_DIR ?? mkdtempSync(join(tmpdir(), 'blobs-')),
     MEDIA_FETCH_TIMEOUT_MS: '500',
     LOG_SINK: 'test',
+    ...env,
   });
   const container = createContainer(config, {
     db,
@@ -33,10 +34,14 @@ export function createTestApp(overrides: ContainerOverrides = {}) {
   });
   return {
     logger,
+    /** Meta's GET subscription handshake. */
+    verifyWhatsApp: (query: string) =>
+      container.webhooks.whatsappVerification(new Request(`http://test/api/webhooks/whatsapp?${query}`)),
     /** POSTs a payload to a webhook and waits for the post-response processing to finish. */
-    async post(channel: 'email' | 'whatsapp', body: unknown) {
+    async post(channel: 'email' | 'whatsapp', body: unknown, headers: Record<string, string> = {}) {
       const request = new Request(`http://test/api/webhooks/${channel}`, {
         method: 'POST',
+        headers,
         body: typeof body === 'string' ? body : JSON.stringify(body),
       });
       const response = await container.webhooks[channel](request);
@@ -44,9 +49,10 @@ export function createTestApp(overrides: ContainerOverrides = {}) {
       return { status: response.status, body: (await response.json()) as Record<string, unknown> };
     },
     /** POSTs a card-feed transaction and waits for the re-matching it triggers. */
-    async postTransaction(body: unknown) {
+    async postTransaction(body: unknown, headers: Record<string, string> = {}) {
       const request = new Request('http://test/api/transactions', {
         method: 'POST',
+        headers,
         body: typeof body === 'string' ? body : JSON.stringify(body),
       });
       const response = await container.transactions(request);

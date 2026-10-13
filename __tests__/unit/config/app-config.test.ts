@@ -8,6 +8,12 @@ describe('app config', () => {
       fixturesDir: resolve('fixtures'),
       blobDir: resolve('.storage'),
       mediaFetchTimeoutMs: 3000,
+      webhookSecurity: {
+        emailSecret: null,
+        whatsappAppSecret: null,
+        whatsappVerifyToken: null,
+        transactionsSecret: null,
+      },
       logging: { sink: 'test' },
     });
   });
