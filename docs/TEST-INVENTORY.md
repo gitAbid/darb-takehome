@@ -186,3 +186,12 @@ pipeline → database. Check the mix with `npm run test:mix` (target 50 / 30 / 2
 | Decided or system matches are not pending (cannot be confirmed/rejected again)                                 | `e2e/review.e2e.test.ts` › "cannot reject a system decision…", "keeps the document in review…"                      |
 | Invalid input rejected before any database work; unknown match reported                                        | `e2e/review.e2e.test.ts` › "rejects invalid input…"                                                                 |
 | Lost races: identical decision → no-op, different → not pending; conflicts mapped; unexpected errors propagate | `unit/review/review-races.test.ts`                                                                                  |
+
+## Re-matching (bonus B2)
+
+| Rule                                                                                                                     | Test                                                               |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| A document that arrived before its transaction is matched when the transaction arrives; out-of-scope documents untouched | `e2e/rematch.e2e.test.ts` › "S05: the invoice that arrived first…" |
+| A transaction already proposed (incl. reviewer-rejected) is never proposed again                                         | `e2e/rematch.e2e.test.ts` › "never re-proposes…"                   |
+| Card feed: idempotent on `externalRef`, payload and card ownership validated, 500 only when nothing stored               | `e2e/rematch.e2e.test.ts` › "is idempotent on externalRef…"        |
+| A failing document does not stop re-matching the others                                                                  | `integration/ingestion/rematch-isolation.test.ts`                  |

@@ -57,6 +57,8 @@ model Card {
 
 model Transaction {
   id            Int             @id @default(autoincrement())
+  /// Card-feed reference; makes transaction ingestion idempotent (feeds redeliver too).
+  externalRef   String?         @unique
   clientId      Int
   cardId        Int
   /// E.164 of the driver who used the card; scopes WhatsApp documents.

@@ -10,6 +10,7 @@ import type { DocumentExtractor, ExtractedDocument } from '@/lib/extraction/type
 import { RecordingLogger } from '@/lib/logging/recording-logger';
 import { createPrismaRepositories, PrismaUnitOfWork } from '@/lib/repositories/prisma/prisma-unit-of-work';
 import { DocumentProcessor } from '@/lib/services/ingestion/document-processor';
+import { MatchStage } from '@/lib/services/ingestion/match-stage';
 import { SenderResolver } from '@/lib/services/ingestion/sender-resolver';
 import { defaultMatchingConfig } from '@/lib/services/matching/matching-config';
 import { matchDocument } from '@/lib/services/transaction-matcher';
@@ -43,13 +44,16 @@ async function setup(
   const logger = new RecordingLogger();
   const processor = new DocumentProcessor({
     repositories,
-    unitOfWork: new PrismaUnitOfWork(db),
     blobStore,
     extractor: { extract },
     senders: new SenderResolver(repositories.senders),
-    matchDocument,
-    dateRules: defaultMatchingConfig.date,
-    clock: new FixedClock(new Date('2025-06-20T09:00:00Z')),
+    matchStage: new MatchStage({
+      repositories,
+      unitOfWork: new PrismaUnitOfWork(db),
+      matchDocument,
+      dateRules: defaultMatchingConfig.date,
+      clock: new FixedClock(new Date('2025-06-20T09:00:00Z')),
+    }),
     logger,
   });
   const document = await db.document.create({

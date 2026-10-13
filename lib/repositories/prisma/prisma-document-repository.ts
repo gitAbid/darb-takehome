@@ -1,5 +1,11 @@
 import type { DocumentRepository } from '../document-repository';
-import type { DocumentStatusChange, InsertDocumentResult, NewDocument, StoredDocument } from '../records';
+import type {
+  DocumentStatusChange,
+  InsertDocumentResult,
+  NewDocument,
+  StoredDocument,
+  UnmatchedDocumentQuery,
+} from '../records';
 import { toDocumentCreateInput, toStatusChangeData, toStoredDocument } from './document-mapper';
 import { uniqueViolationFields } from './map-prisma-error';
 import type { PrismaDb } from './prisma-db';
@@ -20,6 +26,23 @@ export class PrismaDocumentRepository implements DocumentRepository {
       if (field === null) throw error;
       return { kind: 'duplicate', field: await this.reportedDuplicateField(document, field) };
     }
+  }
+
+  async findUnmatchedNear(query: UnmatchedDocumentQuery): Promise<StoredDocument[]> {
+    const rows = await this.db.document.findMany({
+      where: {
+        status: 'UNMATCHED',
+        documentType: { in: ['RECEIPT', 'TAX_INVOICE'] },
+        totalAmount: { not: null },
+        documentDate: { gte: query.from, lte: query.to },
+        OR: [
+          { clientId: query.clientId },
+          ...(query.driverPhone === null ? [] : [{ source: 'WHATSAPP' as const, senderIdentifier: query.driverPhone }]),
+        ],
+      },
+      orderBy: { id: 'asc' },
+    });
+    return rows.map(toStoredDocument);
   }
 
   /**

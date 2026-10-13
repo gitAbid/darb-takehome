@@ -9,6 +9,7 @@ export const LogEvents = {
   SenderUnknown: 'sender.unknown',
   ExtractionCompleted: 'extraction.completed',
   MatchDecided: 'match.decided',
+  TransactionReceived: 'transaction.received',
   ReviewConfirmed: 'review.confirmed',
   ReviewRejected: 'review.rejected',
   ReviewConflict: 'review.conflict',

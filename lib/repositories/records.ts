@@ -75,3 +75,26 @@ export interface CandidateQuery {
   from: Date;
   to: Date;
 }
+
+export interface NewTransaction {
+  externalRef: string;
+  clientId: number;
+  cardId: number;
+  driverPhone: string | null;
+  merchantName: string;
+  mcc: string;
+  amount: number;
+  currency: string;
+  transactionAt: Date;
+}
+
+export type InsertTransactionResult = { kind: 'created' | 'duplicate'; id: number };
+
+/** UNMATCHED, extracted documents a new transaction could now explain. */
+export interface UnmatchedDocumentQuery {
+  clientId: number;
+  driverPhone: string | null;
+  /** Document-date range worth re-matching for this transaction. */
+  from: Date;
+  to: Date;
+}

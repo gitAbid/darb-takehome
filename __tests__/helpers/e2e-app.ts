@@ -43,6 +43,16 @@ export function createTestApp(overrides: ContainerOverrides = {}) {
       await scheduler.flush();
       return { status: response.status, body: (await response.json()) as Record<string, unknown> };
     },
+    /** POSTs a card-feed transaction and waits for the re-matching it triggers. */
+    async postTransaction(body: unknown) {
+      const request = new Request('http://test/api/transactions', {
+        method: 'POST',
+        body: typeof body === 'string' ? body : JSON.stringify(body),
+      });
+      const response = await container.transactions(request);
+      await scheduler.flush();
+      return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+    },
   };
 }
 

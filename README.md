@@ -61,6 +61,17 @@ Expected results, for example:
 
 The full list is in [`docs/SCENARIOS.md`](docs/SCENARIOS.md). Browse the data with `npx prisma studio`.
 
+## Late transactions (re-matching)
+
+A receipt can arrive before its card transaction. Posting the transaction re-matches waiting documents:
+
+```bash
+curl -X POST http://localhost:3000/api/transactions -H 'content-type: application/json' -d '{
+  "externalRef": "feed-T16", "clientId": 1, "cardId": 3, "driverPhone": "+966554445566",
+  "merchantName": "SAHARA AUTO SVC RUH", "mcc": "7538", "amount": 34000, "transactionAt": "2025-06-15T08:00:00Z"
+}'   # → 201; S05 (UNMATCHED) becomes MATCHED — see npm run db:report
+```
+
 ## Review actions
 
 `confirmMatch` / `rejectMatch` in [`lib/actions/review.ts`](lib/actions/review.ts) are next-safe-action server

@@ -53,12 +53,14 @@ describe('route modules', () => {
     process.env.BLOB_DIR = mkdtempSync(join(tmpdir(), 'blobs-'));
   });
 
-  it('serve both webhooks through the process-wide container and schedule work with after()', async () => {
+  it('serve the webhooks and the card feed through the process-wide container and schedule work with after()', async () => {
     const { POST: email } = await import('@/app/api/webhooks/email/route');
     const { POST: whatsapp } = await import('@/app/api/webhooks/whatsapp/route');
+    const { POST: transactions } = await import('@/app/api/transactions/route');
     const { after } = await import('next/server');
     const bad = await email(new Request('http://test', { method: 'POST', body: '{}' }));
     expect(bad.status).toBe(400);
+    expect((await transactions(new Request('http://test', { method: 'POST', body: '{}' }))).status).toBe(400);
     const payload = await import('@/fixtures/scenarios/01-exact-match/payload.json');
     const ok = await whatsapp(new Request('http://test', { method: 'POST', body: JSON.stringify(payload.default) }));
     expect(ok.status).toBe(200);

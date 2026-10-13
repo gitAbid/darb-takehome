@@ -36,4 +36,8 @@ post "I04 text message → ignored"                     whatsapp "$INGESTION/i04
 post "I05 unknown media → FAILED, not lost"           whatsapp "$INGESTION/i05-whatsapp-unknown-media.json"
 post "I06 one invalid message in a valid delivery"    whatsapp "$INGESTION/i06-whatsapp-one-invalid-message.json"
 
+printf '\n▶ B2 card feed delivers S05'"'"'s transaction late → S05 re-matched\n  '
+curl -sS -X POST "$BASE_URL/api/transactions" -H 'content-type: application/json' -w '  [HTTP %{http_code}]\n' \
+  -d '{"externalRef":"feed-T16","clientId":1,"cardId":3,"driverPhone":"+966554445566","merchantName":"SAHARA AUTO SVC RUH","mcc":"7538","amount":34000,"transactionAt":"2025-06-15T08:00:00Z"}'
+
 printf '\nDone. Processing runs after each response; see the outcome with: npm run db:report\n'

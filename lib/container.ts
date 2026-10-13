@@ -15,13 +15,17 @@ import { DocumentIngestion } from './services/document-ingestion';
 import type { BackgroundScheduler } from './services/ingestion/background-scheduler';
 import { DocumentProcessor } from './services/ingestion/document-processor';
 import { IntakeService } from './services/ingestion/intake-service';
+import { MatchStage } from './services/ingestion/match-stage';
 import { SenderResolver } from './services/ingestion/sender-resolver';
 import { ReviewService } from './services/review/review-service';
 import { defaultMatchingConfig } from './services/matching/matching-config';
 import { matchDocument } from './services/transaction-matcher';
 import type { BlobStore } from './storage/blob-store';
 import { LocalFileBlobStore } from './storage/local-file-blob-store';
+import { RematchService } from './services/transactions/rematch-service';
+import { TransactionIngestionService } from './services/transactions/transaction-ingestion';
 import { NextAfterScheduler } from './webhooks/http/next-after-scheduler';
+import { createTransactionHandler } from './webhooks/http/transaction-handler';
 import { createWebhookHandler, type WebhookHandler } from './webhooks/http/webhook-handler';
 
 export interface Container {
@@ -29,6 +33,7 @@ export interface Container {
   processor: DocumentProcessor;
   review: ReviewService;
   webhooks: { email: WebhookHandler; whatsapp: WebhookHandler };
+  transactions: WebhookHandler;
   logger: Logger;
 }
 
@@ -62,21 +67,27 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
     logger,
     mediaTimeoutMs: config.mediaFetchTimeoutMs,
   });
-  const processor = new DocumentProcessor({
+  const matchStage = new MatchStage({
     repositories,
     unitOfWork,
-    blobStore,
-    extractor: overrides.extractor ?? new MockExtractor(FixtureRegistry.load(config.fixturesDir)),
-    senders,
     matchDocument,
     dateRules: defaultMatchingConfig.date,
     clock,
+  });
+  const processor = new DocumentProcessor({
+    repositories,
+    blobStore,
+    extractor: overrides.extractor ?? new MockExtractor(FixtureRegistry.load(config.fixturesDir)),
+    senders,
+    matchStage,
     logger,
   });
-  const ingestion = new DocumentIngestion({
-    intake,
-    processor,
-    scheduler: overrides.scheduler ?? new NextAfterScheduler(),
+  const scheduler = overrides.scheduler ?? new NextAfterScheduler();
+  const ingestion = new DocumentIngestion({ intake, processor, scheduler, logger });
+  const transactionIngestion = new TransactionIngestionService({
+    transactions: repositories.transactions,
+    rematch: new RematchService({ repositories, matchStage, senders, dateRules: defaultMatchingConfig.date, logger }),
+    scheduler,
     logger,
   });
   return {
@@ -88,6 +99,7 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
       email: createWebhookHandler((payload) => ingestion.receiveEmail(payload), logger),
       whatsapp: createWebhookHandler((payload) => ingestion.receiveWhatsApp(payload), logger),
     },
+    transactions: createTransactionHandler((payload) => transactionIngestion.receive(payload), logger),
   };
 }
 

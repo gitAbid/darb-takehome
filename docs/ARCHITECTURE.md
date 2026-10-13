@@ -104,6 +104,7 @@ focused subfolder.
 app/
   api/webhooks/email/route.ts         ◀ brief · HTTP only: adapt → intake → respond → after(process)
   api/webhooks/whatsapp/route.ts      ◀ brief · same, WhatsApp adapter
+  api/transactions/route.ts           card feed → re-matching (bonus B2)
   review/page.tsx                     ◀ brief · review queue (bonus M9)
 lib/
   prisma.ts · utils.ts · logger.ts    ◀ brief boilerplate, unchanged
@@ -125,6 +126,8 @@ lib/
     email/email-payload.schema.ts · email-adapter.ts
     whatsapp/whatsapp-payload.schema.ts · whatsapp-adapter.ts
     http/webhook-handler.ts           JSON → service → 200 / 400 / 500
+    http/transaction-handler.ts       card feed → 201 / 200 duplicate / 400 / 500
+    http/read-json.ts                 shared JSON body parsing
     http/next-after-scheduler.ts      BackgroundScheduler on Next.js after()
   extraction/
     types.ts                          ◀ brief interface, verbatim
@@ -145,7 +148,9 @@ lib/
       sender-resolver.ts · sender-identity.ts   alias → registered sender → phone → scope
       document-processor.ts           extract → match → persist (post-response)
       document-state-machine.ts       allowed transitions + guarded updates
+      match-stage.ts                  candidates → match → persist (shared with re-matching)
       match-persistence.ts            MatchResult → rows; race demotion
+      match-logging.ts                one match.decided event per decision
       background-scheduler.ts         interface for post-response work
     matching/
       types.ts · matching-config.ts
@@ -156,7 +161,8 @@ lib/
       text/                           merchant-normalizer.ts · string-similarity.ts · token-dice-similarity.ts
                                       · jaro-winkler.ts · merchant-vocabulary.ts
     review/
-      review-service.ts · review-errors.ts
+      review-service.ts · review-outcome.ts · reviewer.ts
+    transactions/                     bonus B2: payload schema · TransactionIngestionService · RematchService
   repositories/                       interfaces
     unit-of-work.ts · document-repository.ts · transaction-repository.ts
     · match-repository.ts · sender-directory.ts

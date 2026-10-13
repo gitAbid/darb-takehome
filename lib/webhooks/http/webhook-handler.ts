@@ -3,7 +3,7 @@ import type { Logger } from '@/lib/logging/logger';
 import { serializeError } from '@/lib/logging/serialize-error';
 import type { WebhookOutcome } from '@/lib/services/document-ingestion';
 
-const INVALID_JSON = Symbol('invalid-json');
+import { INVALID_JSON, invalidJsonResponse, readJson } from './read-json';
 
 export type WebhookHandler = (request: Request) => Promise<Response>;
 
@@ -17,12 +17,7 @@ export function createWebhookHandler(
 ): WebhookHandler {
   return async (request) => {
     const payload = await readJson(request);
-    if (payload === INVALID_JSON) {
-      return Response.json(
-        { error: 'INVALID_JSON', issues: [{ path: '(root)', message: 'Body is not JSON' }] },
-        { status: 400 },
-      );
-    }
+    if (payload === INVALID_JSON) return invalidJsonResponse();
     try {
       const outcome = await receive(payload);
       if (outcome.kind === 'invalid')
@@ -33,12 +28,4 @@ export function createWebhookHandler(
       return Response.json({ error: 'INTERNAL' }, { status: 500 });
     }
   };
-}
-
-async function readJson(request: Request): Promise<unknown> {
-  try {
-    return await request.json();
-  } catch {
-    return INVALID_JSON;
-  }
 }

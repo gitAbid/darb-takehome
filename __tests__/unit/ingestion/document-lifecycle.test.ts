@@ -11,6 +11,7 @@ const repository = (changed: boolean): DocumentRepository & { changeStatus: jest
   insert: jest.fn(),
   findById: jest.fn(),
   changeStatus: jest.fn().mockResolvedValue(changed),
+  findUnmatchedNear: jest.fn(),
 });
 
 describe('document state machine', () => {

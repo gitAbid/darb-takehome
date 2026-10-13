@@ -1,8 +1,9 @@
 import { CONFIRMED_MATCH_STATUSES } from '@/lib/domain/statuses';
 import type { CandidateTransaction } from '@/lib/services/matching/types';
 
-import type { CandidateQuery } from '../records';
+import type { CandidateQuery, InsertTransactionResult, NewTransaction } from '../records';
 import type { TransactionRepository } from '../transaction-repository';
+import { uniqueViolationFields } from './map-prisma-error';
 import type { PrismaDb } from './prisma-db';
 
 interface TransactionRow {
@@ -36,6 +37,24 @@ export class PrismaTransactionRepository implements TransactionRepository {
       orderBy: [{ transactionAt: 'asc' }, { id: 'asc' }],
     });
     return rows.map(toCandidate);
+  }
+
+  async insert(transaction: NewTransaction): Promise<InsertTransactionResult> {
+    try {
+      const { id } = await this.db.transaction.create({ data: transaction, select: { id: true } });
+      return { kind: 'created', id };
+    } catch (error) {
+      if (!uniqueViolationFields(error)?.includes('externalRef')) throw error;
+      const existing = await this.db.transaction.findUniqueOrThrow({
+        where: { externalRef: transaction.externalRef },
+        select: { id: true },
+      });
+      return { kind: 'duplicate', id: existing.id };
+    }
+  }
+
+  async cardBelongsToClient(cardId: number, clientId: number): Promise<boolean> {
+    return (await this.db.card.count({ where: { id: cardId, clientId } })) === 1;
   }
 }
 

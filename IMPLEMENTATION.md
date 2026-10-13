@@ -325,6 +325,22 @@ only possible **before** anything is persisted, which is the one case where a re
 
 ---
 
+### 5.5 Re-matching when a transaction arrives (bonus B2)
+
+A receipt often arrives **before** its card transaction is settled (scenario S05). `POST /api/transactions` is the
+card-feed entry point: Zod-validated, idempotent on `externalRef` (feeds redeliver too: `201` created, `200` duplicate),
+and it checks that the card belongs to the client. After the response, `RematchService`:
+
+1. finds `UNMATCHED`, matchable documents of that client (or sent by that driver) whose date could pair with the
+   transaction under any document type's window;
+2. re-runs the **same `MatchStage`** as first-time processing (`UNMATCHED → MATCHED / NEEDS_REVIEW`; staying
+   unmatched writes nothing);
+3. **never re-proposes a transaction already proposed for the document** — including candidates a reviewer
+   rejected — so a human decision is never asked twice;
+4. isolates failures per document (logged, the rest continue; the transaction is already stored).
+
+In production this endpoint sits behind service authentication (or the HMAC verification of bonus B5).
+
 ## 6. Data model
 
 ### 6.1 Entities
@@ -563,6 +579,9 @@ Each decision lists what was chosen, what was rejected, and why.
 | D26 | A redelivery is reported as an `externalId` duplicate even though it also repeats the hash | Report whichever constraint SQLite names first   | The result must say _why_ it was a duplicate: same message vs same file in a new message                         |
 | D27 | An auto-match that loses the confirmed-slot race is re-saved as `NEEDS_REVIEW`             | Fail the document                                | The database stops the double confirmation; the document still reaches a human                                   |
 | D28 | Review outcomes are values; a lost race re-reads the match                                 | Throw on every non-update                        | A double-click must succeed quietly, while a genuine conflict must be shown to the reviewer                      |
+| D29 | One `MatchStage` shared by first-time processing and re-matching                           | A separate re-match matcher                      | Both paths must follow identical rules; one implementation cannot drift                                          |
+| D30 | `Transaction.externalRef` unique, added by an additive migration                           | Trust the feed not to redeliver                  | Same idempotency principle as the webhooks; additive `ALTER TABLE` keeps the hand-written `CHECK`s intact        |
+| D31 | Re-matching excludes transactions already proposed for the document                        | Re-propose everything                            | A reviewer's rejection is a decision; asking again wastes their time and invites a wrong confirm                 |
 
 ---
 
@@ -629,7 +648,7 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 | R32 | GitHub repository shared                                                     | M6         | https://github.com/gitAbid/darb-takehome                                                                                                                |
 | R33 | Spec project structure and boilerplate                                       | setup      | files byte-identical to the brief                                                                                                                       |
 | B1  | Bonus: `/review` page                                                        | M9         | not built yet (planned M9)                                                                                                                              |
-| B2  | Bonus: re-match `UNMATCHED` documents when transactions arrive               | M8         | not built yet (planned M8)                                                                                                                              |
+| B2  | Bonus: re-match `UNMATCHED` documents when transactions arrive               | M8         | `e2e/rematch.e2e.test.ts`; `integration/ingestion/rematch-isolation.test.ts` (§5.5)                                                                     |
 | B3  | Bonus: multi-transaction invoice design sketch                               | M7         | design in §12 (not built)                                                                                                                               |
 | B4  | Bonus: real extractor behind the interface, mock by default                  | M11        | not built (optional M11)                                                                                                                                |
 | B5  | Bonus: HMAC signature verification                                           | M10        | not built yet (planned M10)                                                                                                                             |

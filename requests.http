@@ -97,3 +97,18 @@ POST {{base}}/api/webhooks/whatsapp
 Content-Type: application/json
 
 < ./fixtures/payloads/ingestion/i05-whatsapp-unknown-media.json
+
+### B2 — the card feed delivers S05's transaction late → S05 re-matched to MATCHED (send S05 first)
+POST {{base}}/api/transactions
+Content-Type: application/json
+
+{
+  "externalRef": "feed-T16",
+  "clientId": 1,
+  "cardId": 3,
+  "driverPhone": "+966554445566",
+  "merchantName": "SAHARA AUTO SVC RUH",
+  "mcc": "7538",
+  "amount": 34000,
+  "transactionAt": "2025-06-15T08:00:00Z"
+}
