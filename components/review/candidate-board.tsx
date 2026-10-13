@@ -68,9 +68,9 @@ export function CandidateBoard({ candidates, canDecide, requireChoice, nextHref,
         startTransition(() => router.refresh());
         return;
       }
+      // The action revalidated /review, so the current page is already fresh and the next one is fetched anew.
       const resolved = kind === 'confirm' || ('remainingCandidates' in result && result.remainingCandidates === 0);
       if (resolved) go(nextHref);
-      else startTransition(() => router.refresh());
     },
     [busy, canDecide, confirm, go, nextHref, reject, router],
   );

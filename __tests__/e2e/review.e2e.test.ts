@@ -2,12 +2,16 @@
  * End-to-end review: real webhooks create the review cases from the scenario fixtures, then the real server actions
  * (next-safe-action) decide them. Asserts what the reviewer sees and what the database guarantees.
  */
+import { revalidatePath } from 'next/cache';
+
 import { confirmMatch, rejectMatch } from '@/lib/actions/review';
 
 import { createTestApp, documentOutcome, readFixtureJson, resetAndSeed } from '../helpers/e2e-app';
 import { db } from '../helpers/test-database';
 
 process.env.LOG_SINK = 'test';
+// Outside a Next request revalidatePath throws; the spy proves each decision refreshes the review queue.
+jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
 
 /** Sends a scenario through its webhook and returns its candidate match ids, best first. */
 async function reviewCase(folder: string, channel: 'email' | 'whatsapp', externalId: string): Promise<number[]> {
@@ -18,7 +22,10 @@ async function reviewCase(folder: string, channel: 'email' | 'whatsapp', externa
 
 const nearTie = () => reviewCase('02-ambiguous-same-chain', 'email', 'msg_S02:0');
 
-beforeEach(resetAndSeed);
+beforeEach(async () => {
+  jest.mocked(revalidatePath).mockClear();
+  await resetAndSeed();
+});
 afterAll(() => db.$disconnect());
 
 describe('confirmMatch', () => {
@@ -36,6 +43,7 @@ describe('confirmMatch', () => {
       ],
     });
     expect((await confirmMatch({ matchId: sibling })).data).toEqual({ ok: false, code: 'MATCH_NOT_PENDING' });
+    expect(revalidatePath).toHaveBeenCalledWith('/review');
   });
 
   it('S07: the database refuses a second confirmed document on a transaction; the reviewer can still reject', async () => {
@@ -81,6 +89,7 @@ describe('rejectMatch', () => {
       remainingCandidates: 1,
     });
     expect((await documentOutcome('msg_S02:0')).status).toBe('NEEDS_REVIEW');
+    expect(revalidatePath).toHaveBeenCalledWith('/review');
     expect((await rejectMatch({ matchId: second })).data).toMatchObject({ ok: true, remainingCandidates: 0 });
     expect((await rejectMatch({ matchId: second })).data).toMatchObject({ ok: true, result: 'alreadyRejected' });
     expect(await documentOutcome('msg_S02:0')).toMatchObject({ status: 'UNMATCHED' });
