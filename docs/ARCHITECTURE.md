@@ -170,6 +170,7 @@ scripts/
 types/                                ◀ brief · webhook payload types inferred from the Zod schemas
 __tests__/                            ◀ brief (Jest only runs **/__tests__/**/*.test.ts)
   unit/ · integration/ · routes/ · helpers/
+  setup/                              migrate a template DB once; copy it per test file
 docs/                                 ARCHITECTURE.md · SCENARIOS.md
 ```
 
@@ -435,12 +436,12 @@ Environment is parsed once with Zod at startup (`AppEnv`); invalid configuration
 
 ## 9. Testing strategy
 
-| Layer       | What                                                                                                    | How                                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Unit        | Matcher (filters, signals, policy, ranking), text helpers, domain helpers, adapters, schemas, redaction | Pure functions, table-driven from `SCENARIOS.md`                        |
-| Integration | Repositories, intake, processor, review service                                                         | Real SQLite test database, reset per test file                          |
-| Route       | Both webhook `POST` handlers                                                                            | Call the exported handler with a `Request`; assert status + body + rows |
-| Consistency | Seed ⇄ fixtures ⇄ scenario matrix                                                                       | One test that fails on drift                                            |
+| Layer       | What                                                                                                    | How                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Unit        | Matcher (filters, signals, policy, ranking), text helpers, domain helpers, adapters, schemas, redaction | Pure functions, table-driven from `SCENARIOS.md`                           |
+| Integration | Repositories, intake, processor, review service, schema constraints                                     | Real SQLite: a migrated template copied per test file (`__tests__/setup/`) |
+| Route       | Both webhook `POST` handlers                                                                            | Call the exported handler with a `Request`; assert status + body + rows    |
+| Consistency | Seed ⇄ fixtures ⇄ scenario matrix                                                                       | One test that fails on drift                                               |
 
 Rules:
 

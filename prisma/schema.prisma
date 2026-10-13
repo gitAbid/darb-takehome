@@ -1,3 +1,5 @@
+// Data model: IMPLEMENTATION.md §6. Rules Prisma cannot express (CHECK constraints) live in the migration SQL.
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -5,4 +7,163 @@ generator client {
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
+}
+
+model Client {
+  id           Int                 @id @default(autoincrement())
+  name         String
+  /// Inbox alias: receipts+<slug>@darb.example.com
+  slug         String              @unique
+  senderEmails ClientSenderEmail[]
+  drivers      Driver[]
+  cards        Card[]
+  transactions Transaction[]
+  documents    Document[]
+}
+
+/// Registered email senders (e.g. a fleet manager forwarding invoices).
+model ClientSenderEmail {
+  id       Int    @id @default(autoincrement())
+  clientId Int
+  email    String @unique
+  client   Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+}
+
+/// WhatsApp senders. A phone may drive for more than one client.
+model Driver {
+  id       Int    @id @default(autoincrement())
+  clientId Int
+  /// E.164
+  phone    String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, phone])
+  @@index([phone])
+}
+
+/// last4 is deliberately not unique: two cards in one client can share it.
+model Card {
+  id           Int           @id @default(autoincrement())
+  clientId     Int
+  last4        String
+  label        String
+  client       Client        @relation(fields: [clientId], references: [id])
+  transactions Transaction[]
+
+  @@index([clientId, last4])
+}
+
+model Transaction {
+  id            Int             @id @default(autoincrement())
+  clientId      Int
+  cardId        Int
+  /// E.164 of the driver who used the card; scopes WhatsApp documents.
+  driverPhone   String?
+  /// Acquirer-provided name, often noisy ("ALFANAR FUEL ST 04 RUH").
+  merchantName  String
+  mcc           String
+  /// Minor units (halalas).
+  amount        Int
+  currency      String          @default("SAR")
+  transactionAt DateTime
+  createdAt     DateTime        @default(now())
+  client        Client          @relation(fields: [clientId], references: [id])
+  card          Card            @relation(fields: [cardId], references: [id])
+  documents     DocumentMatch[]
+
+  @@index([clientId, transactionAt])
+  @@index([driverPhone, transactionAt])
+}
+
+model Document {
+  id                   Int             @id @default(autoincrement())
+  source               DocumentSource
+  /// Email: messageId:attachmentIndex · WhatsApp: wamid
+  externalId           String          @unique
+  /// SHA-256 of the bytes; null only when the media could not be fetched.
+  contentHash          String?         @unique
+  /// Email `from` address or WhatsApp phone (E.164).
+  senderIdentifier     String
+  /// Email `to` address (may carry the client alias); null for WhatsApp.
+  recipientIdentifier  String?
+  /// Resolved client when the sender maps to exactly one.
+  clientId             Int?
+  status               DocumentStatus  @default(RECEIVED)
+  failureReason        String?
+  /// Reason codes of the last matching decision (JSON array).
+  decisionReasons      Json?
+  storageKey           String?
+  mimeType             String
+  documentType         DocumentType?
+  merchantName         String?
+  vatNumber            String?
+  invoiceNumber        String?
+  totalAmount          Int?
+  currency             String?
+  documentDate         DateTime?
+  cardLast4            String?
+  rawText              String?
+  extractionConfidence Float?
+  receivedAt           DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  client               Client?         @relation(fields: [clientId], references: [id])
+  matches              DocumentMatch[]
+
+  @@index([status])
+}
+
+model DocumentMatch {
+  id                     Int         @id @default(autoincrement())
+  documentId             Int
+  transactionId          Int
+  /// 1 = best candidate.
+  rank                   Int
+  confidence             Float
+  /// Per-signal score breakdown, for explainability.
+  signals                Json
+  /// Candidate warnings, e.g. ["CARD_POSSIBLE_MISREAD"].
+  flags                  Json
+  status                 MatchStatus @default(CANDIDATE)
+  /// 'system' | reviewer identifier
+  decidedBy              String?
+  decidedAt              DateTime?
+  /// = transactionId while confirmed, else null → at most one confirmed document per transaction.
+  confirmedTransactionId Int?        @unique
+  /// = documentId while confirmed, else null → at most one confirmed transaction per document.
+  confirmedDocumentId    Int?        @unique
+  createdAt              DateTime    @default(now())
+  document               Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  transaction            Transaction @relation(fields: [transactionId], references: [id])
+
+  @@unique([documentId, transactionId])
+  @@index([transactionId])
+}
+
+enum DocumentSource {
+  EMAIL
+  WHATSAPP
+}
+
+enum DocumentStatus {
+  RECEIVED
+  EXTRACTED
+  MATCHED
+  NEEDS_REVIEW
+  UNMATCHED
+  FAILED
+}
+
+enum MatchStatus {
+  CANDIDATE
+  AUTO_CONFIRMED
+  CONFIRMED
+  REJECTED
+}
+
+enum DocumentType {
+  RECEIPT
+  TAX_INVOICE
+  UNKNOWN
 }

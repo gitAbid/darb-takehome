@@ -316,6 +316,7 @@ only possible **before** anything is persisted, which is the one case where a re
 ```mermaid
 erDiagram
   Client ||--o{ ClientSenderEmail : "registers"
+  Client ||--o{ Driver : "employs"
   Client ||--o{ Card : "owns"
   Client ||--o{ Transaction : "has"
   Card ||--o{ Transaction : "charged on"
@@ -332,6 +333,11 @@ erDiagram
     int id PK
     int clientId FK
     string email UK
+  }
+  Driver {
+    int id PK
+    int clientId FK
+    string phone "E.164, unique per client"
   }
   Card {
     int id PK
@@ -356,6 +362,7 @@ erDiagram
     string externalId UK
     string contentHash UK "nullable (D6)"
     string senderIdentifier
+    string recipientIdentifier "email to (alias)"
     int clientId FK "nullable"
     enum status
     string failureReason
@@ -395,6 +402,8 @@ Changes from the spec's suggested schema, and why:
 | Change                                                                                                                     | Why                                                                                        |
 | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `Client`, `ClientSenderEmail`                                                                                              | Email scoping needs a sender → client mapping (E1); the spec schema has none               |
+| `Driver` (client, phone)                                                                                                   | The brief asks for a driver-phone mapping; a phone may drive for more than one client      |
+| `Document.recipientIdentifier`                                                                                             | Keeps the email `to` address so the client alias can be resolved when processing           |
 | `Card` entity; `Transaction.cardLast4` → `cardId`                                                                          | Two cards can share a last4 (E2); a `Card` row makes that explicit instead of merging them |
 | `Transaction.driverPhone` kept (not moved to `Card`)                                                                       | Fleet cards are often per vehicle and shared; the driver is a fact of the _transaction_    |
 | `Transaction.mcc`                                                                                                          | Tip tolerance applies only to restaurants (D3)                                             |
@@ -413,10 +422,15 @@ Changes from the spec's suggested schema, and why:
 | **At most one confirmed document per transaction** (R25)                                   | `UNIQUE(confirmedTransactionId)` — set to `transactionId` only when confirmed |
 | At most one confirmed transaction per document                                             | `UNIQUE(confirmedDocumentId)` — set to `documentId` only when confirmed       |
 | `confirmed*Id` is set **if and only if** status is confirmed, and equals the row's own ids | `CHECK` constraints added to the migration SQL                                |
+| A decided match records who decided and when                                               | `CHECK (status = 'CANDIDATE' OR (decidedBy, decidedAt NOT NULL))`             |
+| A document without a content hash must be `FAILED`, and a `FAILED` document has a reason   | `CHECK` constraints on `Document`                                             |
+| Confidence stays within [0, 1]; transaction amounts are positive                           | `CHECK` constraints                                                           |
 
 **Why nullable unique columns instead of a partial unique index** (`… WHERE status IN ('CONFIRMED','AUTO_CONFIRMED')`):
 SQLite supports partial indexes, but Prisma's schema cannot express them, so `prisma migrate` would treat a
-hand-written one as drift. Nullable unique columns are first-class in Prisma and give the same guarantee.
+hand-written one as drift. Nullable unique columns are first-class in Prisma and give the same guarantee. The `CHECK`
+constraints, by contrast, are invisible to Prisma's differ: after adding them, `prisma migrate dev` still reports "in
+sync". Every rule above is proven by `__tests__/integration/schema-constraints.test.ts`.
 
 ### 6.3 Document lifecycle
 
@@ -521,6 +535,8 @@ Each decision lists what was chosen, what was rejected, and why.
 | D19 | `MatchResult.excluded` counts per filter                                           | Only return survivors                            | Explains _why_ nothing matched ("4 removed by currency")                                                         |
 | D20 | Generic category words weigh 0.3 in merchant similarity                            | All tokens equal                                 | `rawabi fuel` vs `alfanar fuel` must not score 0.5 just for sharing `fuel`                                       |
 | D21 | Store numbers dropped during normalization                                         | Keep them                                        | Section 4 trade-off: avoids confident wrong matches from misread station numbers                                 |
+| D22 | `Driver` table for phone → client(s)                                               | Derive clients from `Transaction.driverPhone`    | Explicit mapping the brief asks for; a new driver is known before their first transaction                        |
+| D23 | Each test file gets its own migrated SQLite copy                                   | One shared test database                         | Parallel Jest workers never interfere; tests run against the real schema and `CHECK`s                            |
 
 ---
 
@@ -542,46 +558,46 @@ Each decision lists what was chosen, what was rejected, and why.
 Every requirement in the brief, the milestone that delivers it, and the test or check that proves it. The
 "Verified by" column is filled in as each milestone closes.
 
-| ID  | Requirement                                                                  | Milestone  | Verified by                                                                             |
-| --- | ---------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------- |
-| R1  | `POST /api/webhooks/email`                                                   | M4         | pending M4                                                                              |
-| R2  | `POST /api/webhooks/whatsapp`                                                | M4         | pending M4                                                                              |
-| R3  | `MediaStore` interface backed by a fixture map                               | M3         | pending M3                                                                              |
-| R4  | Zod validation; malformed → 400 with a useful body                           | M4         | pending M4                                                                              |
-| R5  | Same message id → no duplicate document                                      | M4         | pending M4                                                                              |
-| R6  | Same file content → no duplicate document                                    | M4         | pending M4                                                                              |
-| R7  | Fast response; never 500 on extraction/matching failure                      | M4         | pending M4                                                                              |
-| R8  | Sender phone/email scope matchable transactions                              | M1, M2, M4 | matcher: `filters.test.ts` (ScopeFilter), `invariants.test.ts`; M2/M4 pending           |
-| R9  | `ExtractedDocument` / `DocumentExtractor` interfaces                         | setup      | `lib/extraction/types.ts` (verbatim)                                                    |
-| R10 | `MockExtractor` keyed by file hash                                           | M3         | pending M3                                                                              |
-| R11 | ≥ 6 committed fixture documents                                              | M3         | pending M3                                                                              |
-| R12 | Pipeline coded against the extractor interface                               | M3, M4     | pending                                                                                 |
-| R13 | Prisma schema                                                                | M2         | pending M2                                                                              |
-| R14 | Seed: ~15 transactions, 2 clients, sender mapping                            | M2         | pending M2                                                                              |
-| R15 | Pure `matchDocument`, spec result shapes                                     | M1         | `__tests__/unit/matching/matcher.test.ts`, `scenarios.test.ts`                          |
-| R16 | Amount, date, merchant, card, scope signals                                  | M1         | `signals.test.ts`, `filters.test.ts`, `amount-and-card-rules.test.ts`                   |
-| R17 | Weights and thresholds documented and justified                              | M0, M1     | this file §3 + `matching-config.ts`                                                     |
-| R18 | High single candidate → `AUTO_MATCHED`, `AUTO_CONFIRMED`, document `MATCHED` | M1, M4     | pending                                                                                 |
-| R19 | Mid confidence or near tie → `NEEDS_REVIEW`, ranked candidates persisted     | M1, M4     | pending                                                                                 |
-| R20 | Nothing plausible → `UNMATCHED`                                              | M1, M4     | pending                                                                                 |
-| R21 | Transaction with a confirmed document never auto-matches a second            | M1, M4     | pending                                                                                 |
-| R22 | Edge cases 1–6 in fixtures and tests                                         | M1, M3, M4 | pending                                                                                 |
-| R23 | `confirmMatch` semantics                                                     | M5         | pending M5                                                                              |
-| R24 | `rejectMatch` semantics                                                      | M5         | pending M5                                                                              |
-| R25 | Double-submit safe; one confirmed document per transaction in the data layer | M2, M5     | pending                                                                                 |
-| R26 | Matcher unit tests for every edge case                                       | M1         | `scenarios.test.ts` (S01–S13), `unit-scenarios.test.ts` (U01–U12), `invariants.test.ts` |
-| R27 | Ingestion tests: once, redelivery, extraction failure                        | M4         | pending M4                                                                              |
-| R28 | Normalization/similarity tests on messy merchant strings                     | M1         | `__tests__/unit/matching/text/*.test.ts`                                                |
-| R29 | TypeScript strict, Zod at boundaries, no `any`                               | all        | `tsconfig.json` strict; ESLint `no-explicit-any: error`                                 |
-| R30 | README: setup, run, seed, fire webhooks, run tests                           | M6         | pending M6                                                                              |
-| R31 | `IMPLEMENTATION.md`: approach, decisions, assumptions, more time, trade-offs | M0 → M6    | this file                                                                               |
-| R32 | GitHub repository shared                                                     | M6         | pending M6                                                                              |
-| R33 | Spec project structure and boilerplate                                       | setup      | files byte-identical to the brief                                                       |
-| B1  | Bonus: `/review` page                                                        | M9         | pending                                                                                 |
-| B2  | Bonus: re-match `UNMATCHED` documents when transactions arrive               | M8         | pending                                                                                 |
-| B3  | Bonus: multi-transaction invoice design sketch                               | M7         | pending                                                                                 |
-| B4  | Bonus: real extractor behind the interface, mock by default                  | M11        | optional                                                                                |
-| B5  | Bonus: HMAC signature verification                                           | M10        | pending                                                                                 |
+| ID  | Requirement                                                                  | Milestone  | Verified by                                                                                                                    |
+| --- | ---------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| R1  | `POST /api/webhooks/email`                                                   | M4         | pending M4                                                                                                                     |
+| R2  | `POST /api/webhooks/whatsapp`                                                | M4         | pending M4                                                                                                                     |
+| R3  | `MediaStore` interface backed by a fixture map                               | M3         | pending M3                                                                                                                     |
+| R4  | Zod validation; malformed → 400 with a useful body                           | M4         | pending M4                                                                                                                     |
+| R5  | Same message id → no duplicate document                                      | M4         | pending M4                                                                                                                     |
+| R6  | Same file content → no duplicate document                                    | M4         | pending M4                                                                                                                     |
+| R7  | Fast response; never 500 on extraction/matching failure                      | M4         | pending M4                                                                                                                     |
+| R8  | Sender phone/email scope matchable transactions                              | M1, M2, M4 | matcher `filters.test.ts`, `invariants.test.ts`; data `transaction-repository.test.ts`, `sender-directory.test.ts`; M4 pending |
+| R9  | `ExtractedDocument` / `DocumentExtractor` interfaces                         | setup      | `lib/extraction/types.ts` (verbatim)                                                                                           |
+| R10 | `MockExtractor` keyed by file hash                                           | M3         | pending M3                                                                                                                     |
+| R11 | ≥ 6 committed fixture documents                                              | M3         | pending M3                                                                                                                     |
+| R12 | Pipeline coded against the extractor interface                               | M3, M4     | pending                                                                                                                        |
+| R13 | Prisma schema                                                                | M2         | `prisma/schema.prisma` + init migration; `__tests__/integration/schema-constraints.test.ts`                                    |
+| R14 | Seed: ~15 transactions, 2 clients, sender mapping                            | M2         | `__tests__/integration/seed.test.ts` (counts, SD1, idempotent, rollback)                                                       |
+| R15 | Pure `matchDocument`, spec result shapes                                     | M1         | `__tests__/unit/matching/matcher.test.ts`, `scenarios.test.ts`                                                                 |
+| R16 | Amount, date, merchant, card, scope signals                                  | M1         | `signals.test.ts`, `filters.test.ts`, `amount-and-card-rules.test.ts`                                                          |
+| R17 | Weights and thresholds documented and justified                              | M0, M1     | this file §3 + `matching-config.ts`                                                                                            |
+| R18 | High single candidate → `AUTO_MATCHED`, `AUTO_CONFIRMED`, document `MATCHED` | M1, M4     | pending                                                                                                                        |
+| R19 | Mid confidence or near tie → `NEEDS_REVIEW`, ranked candidates persisted     | M1, M4     | pending                                                                                                                        |
+| R20 | Nothing plausible → `UNMATCHED`                                              | M1, M4     | pending                                                                                                                        |
+| R21 | Transaction with a confirmed document never auto-matches a second            | M1, M4     | pending                                                                                                                        |
+| R22 | Edge cases 1–6 in fixtures and tests                                         | M1, M3, M4 | pending                                                                                                                        |
+| R23 | `confirmMatch` semantics                                                     | M5         | pending M5                                                                                                                     |
+| R24 | `rejectMatch` semantics                                                      | M5         | pending M5                                                                                                                     |
+| R25 | Double-submit safe; one confirmed document per transaction in the data layer | M2, M5     | data layer: `schema-constraints.test.ts`, `match-repository.test.ts` (decide conflict/stale); actions M5 pending               |
+| R26 | Matcher unit tests for every edge case                                       | M1         | `scenarios.test.ts` (S01–S13), `unit-scenarios.test.ts` (U01–U12), `invariants.test.ts`                                        |
+| R27 | Ingestion tests: once, redelivery, extraction failure                        | M4         | pending M4                                                                                                                     |
+| R28 | Normalization/similarity tests on messy merchant strings                     | M1         | `__tests__/unit/matching/text/*.test.ts`                                                                                       |
+| R29 | TypeScript strict, Zod at boundaries, no `any`                               | all        | `tsconfig.json` strict; ESLint `no-explicit-any: error`                                                                        |
+| R30 | README: setup, run, seed, fire webhooks, run tests                           | M6         | pending M6                                                                                                                     |
+| R31 | `IMPLEMENTATION.md`: approach, decisions, assumptions, more time, trade-offs | M0 → M6    | this file                                                                                                                      |
+| R32 | GitHub repository shared                                                     | M6         | pending M6                                                                                                                     |
+| R33 | Spec project structure and boilerplate                                       | setup      | files byte-identical to the brief                                                                                              |
+| B1  | Bonus: `/review` page                                                        | M9         | pending                                                                                                                        |
+| B2  | Bonus: re-match `UNMATCHED` documents when transactions arrive               | M8         | pending                                                                                                                        |
+| B3  | Bonus: multi-transaction invoice design sketch                               | M7         | pending                                                                                                                        |
+| B4  | Bonus: real extractor behind the interface, mock by default                  | M11        | optional                                                                                                                       |
+| B5  | Bonus: HMAC signature verification                                           | M10        | pending                                                                                                                        |
 
 ---
 

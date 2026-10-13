@@ -7,6 +7,9 @@ const config: Config = {
     '^@/(.*)$': '<rootDir>/$1',
   },
   testMatch: ['**/__tests__/**/*.test.ts'],
+  globalSetup: '<rootDir>/__tests__/setup/global-setup.ts',
+  globalTeardown: '<rootDir>/__tests__/setup/global-teardown.ts',
+  setupFiles: ['<rootDir>/__tests__/setup/isolated-database.ts'],
   collectCoverageFrom: ['lib/**/*.ts', 'app/api/**/*.ts', '!lib/prisma.ts', '!**/*.d.ts'],
   coverageThreshold: {
     global: { branches: 90, functions: 90, lines: 90, statements: 90 },
