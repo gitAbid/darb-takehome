@@ -534,6 +534,27 @@ so the UI can show each one; only unexpected failures surface as server errors. 
 
 ---
 
+### 7.1 Review queue UI (bonus B1)
+
+`/review` is designed for **decisions per minute without losing precision**:
+
+- **Two panes, evidence beside the decision:** the queue (oldest first, reason badges, amount) on the left; the
+  document (extracted facts + the original photo or PDF) next to its ranked candidates on wide screens, so the reviewer
+  never scrolls to act. Phones get list → detail with full-width touch targets and native page scrolling.
+- **Differences in words, not numbers:** each candidate shows amount, date and card _relative to the document_
+  ("Exact", "+SAR 5.75 (10%) · tip?", "Charged 1 day later", "Receipt 4477 vs 4471 · misread?"), plus the per-signal
+  scores for explainability.
+- **Keyboard-first:** `J/K`, `1–5`, `Enter`/`C`, `X`; after a confirm (or the last reject) the next document opens.
+- **Precision built into the UX:** for look-alike candidates (`NEAR_TIE`) nothing is pre-selected, so `Enter` cannot
+  confirm a coin flip; conflicts from the database (e.g. a transaction that already has a document) are explained in
+  plain language and nothing changes.
+- **Fast by construction:** server components render all data; only the candidate board (decisions, keyboard) and
+  tooltips run on the client. The read side (`ReviewQueueReader`) is separate from the write side (`ReviewService`).
+- **Verified in a real browser** at 1440, 1280, 820 and 390 px, light and dark: layout, the keyboard flow (pick →
+  confirm → auto-advance) and the database-conflict message. UI logic (comparisons, reason copy, navigation, view
+  models) is unit-tested; React components are covered by that browser check rather than a component-test framework,
+  in line with the lean test strategy.
+
 ## 8. Decision log
 
 Each decision lists what was chosen, what was rejected, and why.
@@ -582,6 +603,9 @@ Each decision lists what was chosen, what was rejected, and why.
 | D29 | One `MatchStage` shared by first-time processing and re-matching                           | A separate re-match matcher                      | Both paths must follow identical rules; one implementation cannot drift                                          |
 | D30 | `Transaction.externalRef` unique, added by an additive migration                           | Trust the feed not to redeliver                  | Same idempotency principle as the webhooks; additive `ALTER TABLE` keeps the hand-written `CHECK`s intact        |
 | D31 | Re-matching excludes transactions already proposed for the document                        | Re-propose everything                            | A reviewer's rejection is a decision; asking again wastes their time and invites a wrong confirm                 |
+| D32 | Look-alike candidates are not pre-selected in the UI                                       | Pre-select the top candidate everywhere          | A one-key default on a coin flip invites exactly the silent wrong match section 2 forbids                        |
+| D33 | Server components + two small client islands (candidate board, tooltips)                   | A client-side SPA fetching JSON                  | Less JavaScript, no loading waterfalls, data rendered where the database is                                      |
+| D34 | Separate read model (`ReviewQueueReader`) from decisions (`ReviewService`)                 | One service for both                             | Queries can be shaped for the screen without touching the invariant-enforcing write path                         |
 
 ---
 
@@ -647,7 +671,7 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 | R31 | `IMPLEMENTATION.md`: approach, decisions, assumptions, more time, trade-offs | M0 → M6    | this file                                                                                                                                               |
 | R32 | GitHub repository shared                                                     | M6         | https://github.com/gitAbid/darb-takehome                                                                                                                |
 | R33 | Spec project structure and boilerplate                                       | setup      | files byte-identical to the brief                                                                                                                       |
-| B1  | Bonus: `/review` page                                                        | M9         | not built yet (planned M9)                                                                                                                              |
+| B1  | Bonus: `/review` page                                                        | M9         | `app/review`; `unit/review-ui/*`, `integration/review-read-model.test.ts`; browser-verified (§7.1)                                                      |
 | B2  | Bonus: re-match `UNMATCHED` documents when transactions arrive               | M8         | `e2e/rematch.e2e.test.ts`; `integration/ingestion/rematch-isolation.test.ts` (§5.5)                                                                     |
 | B3  | Bonus: multi-transaction invoice design sketch                               | M7         | design in §12 (not built)                                                                                                                               |
 | B4  | Bonus: real extractor behind the interface, mock by default                  | M11        | not built (optional M11)                                                                                                                                |

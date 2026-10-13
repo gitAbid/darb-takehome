@@ -20,7 +20,7 @@ export function createTestApp(overrides: ContainerOverrides = {}) {
   const logger = new RecordingLogger();
   const config = loadAppConfig({
     FIXTURES_DIR: FIXTURES_DIR,
-    BLOB_DIR: mkdtempSync(join(tmpdir(), 'blobs-')),
+    BLOB_DIR: process.env.BLOB_DIR ?? mkdtempSync(join(tmpdir(), 'blobs-')),
     MEDIA_FETCH_TIMEOUT_MS: '500',
     LOG_SINK: 'test',
   });

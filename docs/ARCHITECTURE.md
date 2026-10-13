@@ -105,7 +105,8 @@ app/
   api/webhooks/email/route.ts         ◀ brief · HTTP only: adapt → intake → respond → after(process)
   api/webhooks/whatsapp/route.ts      ◀ brief · same, WhatsApp adapter
   api/transactions/route.ts           card feed → re-matching (bonus B2)
-  review/page.tsx                     ◀ brief · review queue (bonus M9)
+  review/page.tsx · loading.tsx       ◀ brief · review queue (bonus B1), server-rendered
+  api/documents/[id]/file/route.ts    original document file for reviewers
 lib/
   prisma.ts · utils.ts · logger.ts    ◀ brief boilerplate, unchanged
   container.ts                        composition root: wires implementations to interfaces
@@ -161,15 +162,17 @@ lib/
       text/                           merchant-normalizer.ts · string-similarity.ts · token-dice-similarity.ts
                                       · jaro-winkler.ts · merchant-vocabulary.ts
     review/
-      review-service.ts · review-outcome.ts · reviewer.ts
+      review-service.ts · review-outcome.ts · reviewer.ts · document-file-service.ts
     transactions/                     bonus B2: payload schema · TransactionIngestionService · RematchService
   repositories/                       interfaces
     unit-of-work.ts · document-repository.ts · transaction-repository.ts
-    · match-repository.ts · sender-directory.ts
+    · match-repository.ts · sender-directory.ts · review-queue-reader.ts (read model)
     prisma/                           Prisma implementations + map-prisma-error.ts
   actions/
     safe-action-client.ts             ◀ brief boilerplate
     review.ts                         ◀ brief · confirmMatch / rejectMatch (thin)
+components/review/                    queue list, document panel, candidate board (client), badges
+lib/review-ui/                        pure presentation logic: comparisons, reason copy, view models, navigation
 prisma/
   schema.prisma · migrations/         ◀ brief
   seed.ts                             ◀ brief · loader only

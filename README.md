@@ -72,12 +72,27 @@ curl -X POST http://localhost:3000/api/transactions -H 'content-type: applicatio
 }'   # → 201; S05 (UNMATCHED) becomes MATCHED — see npm run db:report
 ```
 
-## Review actions
+## Review queue — http://localhost:3000/review
 
-`confirmMatch` / `rejectMatch` in [`lib/actions/review.ts`](lib/actions/review.ts) are next-safe-action server
-actions taking `{ matchId: number }`. They are exercised end-to-end in
-[`__tests__/e2e/review.e2e.test.ts`](__tests__/e2e/review.e2e.test.ts) (confirm, reject, double-submit, concurrent
-rivals, and the database refusing a second confirmed document for one transaction).
+Documents the matcher was unsure about, decided one by one. Built for speed: each candidate is compared side by side
+with the document ("+SAR 5.75 (10%) · tip?", "Receipt 4477 vs 4471 · misread?"), reason badges say what to check, and
+after a decision the next document opens automatically.
+
+| Key            | Action                       |
+| -------------- | ---------------------------- |
+| `J` / `K`      | Next / previous document     |
+| `1`–`5`        | Pick a candidate             |
+| `Enter` or `C` | Confirm the picked candidate |
+| `X`            | Reject the picked candidate  |
+
+For look-alike candidates nothing is pre-selected, so a reflex `Enter` can never confirm a coin flip. The layout adapts
+from two panes on desktop to list → detail on phones, and follows the system light/dark preference.
+
+<img src="docs/images/review-desktop.jpeg" alt="Review queue on desktop" width="720"> <img src="docs/images/review-mobile.jpeg" alt="Review queue on a phone" width="180">
+
+The page uses the `confirmMatch` / `rejectMatch` server actions in [`lib/actions/review.ts`](lib/actions/review.ts)
+(next-safe-action, `{ matchId: number }`), which are also exercised end-to-end in
+[`__tests__/e2e/review.e2e.test.ts`](__tests__/e2e/review.e2e.test.ts).
 
 ## Tests
 

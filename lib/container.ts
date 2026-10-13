@@ -10,13 +10,16 @@ import type { Logger } from './logging/logger';
 import { FixtureMediaStore } from './media/fixture-media-store';
 import type { MediaStore } from './media/media-store';
 import prisma from './prisma';
+import { PrismaReviewQueueReader } from './repositories/prisma/prisma-review-queue-reader';
 import { createPrismaRepositories, PrismaUnitOfWork } from './repositories/prisma/prisma-unit-of-work';
+import type { ReviewQueueReader } from './repositories/review-queue-reader';
 import { DocumentIngestion } from './services/document-ingestion';
 import type { BackgroundScheduler } from './services/ingestion/background-scheduler';
 import { DocumentProcessor } from './services/ingestion/document-processor';
 import { IntakeService } from './services/ingestion/intake-service';
 import { MatchStage } from './services/ingestion/match-stage';
 import { SenderResolver } from './services/ingestion/sender-resolver';
+import { DocumentFileService } from './services/review/document-file-service';
 import { ReviewService } from './services/review/review-service';
 import { defaultMatchingConfig } from './services/matching/matching-config';
 import { matchDocument } from './services/transaction-matcher';
@@ -32,6 +35,8 @@ export interface Container {
   ingestion: DocumentIngestion;
   processor: DocumentProcessor;
   review: ReviewService;
+  reviewQueue: ReviewQueueReader;
+  documentFiles: DocumentFileService;
   webhooks: { email: WebhookHandler; whatsapp: WebhookHandler };
   transactions: WebhookHandler;
   logger: Logger;
@@ -94,6 +99,8 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
     ingestion,
     processor,
     review: new ReviewService({ unitOfWork, clock, logger }),
+    reviewQueue: new PrismaReviewQueueReader(db),
+    documentFiles: new DocumentFileService(repositories.documents, blobStore),
     logger,
     webhooks: {
       email: createWebhookHandler((payload) => ingestion.receiveEmail(payload), logger),

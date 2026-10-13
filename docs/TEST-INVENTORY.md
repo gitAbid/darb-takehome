@@ -195,3 +195,15 @@ pipeline → database. Check the mix with `npm run test:mix` (target 50 / 30 / 2
 | A transaction already proposed (incl. reviewer-rejected) is never proposed again                                         | `e2e/rematch.e2e.test.ts` › "never re-proposes…"                   |
 | Card feed: idempotent on `externalRef`, payload and card ownership validated, 500 only when nothing stored               | `e2e/rematch.e2e.test.ts` › "is idempotent on externalRef…"        |
 | A failing document does not stop re-matching the others                                                                  | `integration/ingestion/rematch-isolation.test.ts`                  |
+
+## Review queue UI (bonus B1)
+
+| Rule                                                                                        | Test                                                                                                                       |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Amount / date / card differences described in reviewer language (tip, misread, days apart)  | `unit/review-ui/review-presentation.test.ts` › "explains amount, date and card differences…"                               |
+| Every reason code has reviewer copy                                                         | `unit/review-ui/review-presentation.test.ts` › "has reviewer copy for every reason code…"                                  |
+| J/K navigation, including after the current document leaves the queue                       | `unit/review-ui/review-presentation.test.ts` › "navigates the queue…"                                                      |
+| View models: measurable signals only, graceful fallbacks, both channels                     | `unit/review-ui/review-presentation.test.ts` › "builds the document view…", "falls back gracefully…", "builds queue rows…" |
+| Queue is NEEDS_REVIEW oldest first with pending counts; status totals; detail with cards    | `integration/review-read-model.test.ts` › "lists NEEDS_REVIEW documents oldest first…"                                     |
+| Original file served; 404 for unknown, invalid or missing blobs                             | `integration/review-read-model.test.ts` › "serves the original file…"                                                      |
+| Look-alikes not pre-selected; keyboard pick → confirm → auto-advance; DB conflict explained | Browser verification (IMPLEMENTATION.md §7.1)                                                                              |
