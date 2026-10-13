@@ -46,3 +46,5 @@ next-env.d.ts
 /prisma/*.db-journal
 coverage
 
+# logs
+/logs

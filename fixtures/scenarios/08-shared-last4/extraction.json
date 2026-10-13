@@ -1,0 +1,13 @@
+{
+  "kind": "result",
+  "documentType": "RECEIPT",
+  "merchantName": "Lamaa Car Wash",
+  "vatNumber": null,
+  "totalAmount": 4500,
+  "currency": "SAR",
+  "documentDate": "2025-06-16",
+  "cardLast4": "4471",
+  "invoiceNumber": null,
+  "rawText": "LAMAA CAR WASH\nRIYADH\n2025-06-16 12:05\nEXTERIOR WASH  45.00\nTOTAL SAR 45.00\nCARD **** 4471",
+  "extractionConfidence": 0.91
+}

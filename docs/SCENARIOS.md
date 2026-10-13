@@ -105,7 +105,7 @@ Notes:
 | S02 | #2 ambiguous    | Email    | `to` alias `+najd` → C1 (from = supplier, unregistered) | F02     | T04 (1.00), T05 (1.00)                | `NEEDS_REVIEW` | `NEAR_TIE`                 |
 | S03 | #3 tip          | WhatsApp | D2 → C1 txns of D2                                      | F03     | T06 (0.88)                            | `NEEDS_REVIEW` | `AMOUNT_TIP_TOLERANCE`     |
 | S04 | #4 duplicate    | WhatsApp | D1                                                      | F01     | — (no new document)                   | —              | duplicate by `contentHash` |
-| S05 | #5 no txn yet   | Email    | `from` registered `fleet@najd…` (plain `to`) → C1       | F05     | none (all removed by amount filter)   | `UNMATCHED`    | `NO_CANDIDATES`            |
+| S05 | #5 no txn yet   | Email    | `from` registered `fleet@najd…` (plain `to`) → C1       | F05     | none (2 by date window, 9 by amount)  | `UNMATCHED`    | `NO_CANDIDATES`            |
 | S06 | #6 garbage      | WhatsApp | D1                                                      | F06     | — (not matchable)                     | `UNMATCHED`    | `NOT_MATCHABLE`            |
 | S07 | E3 / R21        | Email    | alias `+najd` → C1                                      | F07     | T07 (1.00, already has SD1)           | `NEEDS_REVIEW` | `TXN_ALREADY_HAS_DOCUMENT` |
 | S08 | E2 shared last4 | Email    | `from` `fleet@najd…` + alias `+najd` → C1               | F08     | T08 (1.00), T09 (1.00)                | `NEEDS_REVIEW` | `NEAR_TIE`                 |

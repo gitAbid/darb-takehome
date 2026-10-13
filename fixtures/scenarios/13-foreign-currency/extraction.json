@@ -1,0 +1,13 @@
+{
+  "kind": "result",
+  "documentType": "RECEIPT",
+  "merchantName": "Emirates Road Fuel",
+  "vatNumber": "100234567800003",
+  "totalAmount": 15000,
+  "currency": "AED",
+  "documentDate": "2025-06-19",
+  "cardLast4": "3051",
+  "invoiceNumber": null,
+  "rawText": "EMIRATES ROAD FUEL\nDUBAI\nTRN 100234567800003\n2025-06-19 13:02\nSPECIAL 95  48.10 L\nTOTAL AED 150.00\nCARD **** 3051",
+  "extractionConfidence": 0.9
+}

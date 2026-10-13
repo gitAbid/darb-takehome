@@ -1,0 +1,13 @@
+{
+  "kind": "result",
+  "documentType": "TAX_INVOICE",
+  "merchantName": "Sahara Auto Service",
+  "vatNumber": "302468013500003",
+  "totalAmount": 34000,
+  "currency": "SAR",
+  "documentDate": "2025-06-15",
+  "cardLast4": null,
+  "invoiceNumber": "INV-2025-0612",
+  "rawText": "TAX INVOICE INV-2025-0612\nSahara Auto Service\nVAT 302468013500003\nDate 2025-06-15\nBill to: Najd Logistics\nOil change + filters\nTotal incl. VAT SAR 340.00",
+  "extractionConfidence": 0.93
+}

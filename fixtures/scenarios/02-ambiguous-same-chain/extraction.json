@@ -1,0 +1,13 @@
+{
+  "kind": "result",
+  "documentType": "TAX_INVOICE",
+  "merchantName": "Alfanar Fuel Company",
+  "vatNumber": "300123456700003",
+  "totalAmount": 20000,
+  "currency": "SAR",
+  "documentDate": "2025-06-14",
+  "cardLast4": null,
+  "invoiceNumber": "INV-99830",
+  "rawText": "TAX INVOICE INV-99830\nAlfanar Fuel Company\nVAT 300123456700003\nDate 2025-06-14\nBill to: Najd Logistics\nFuel supply\nTotal incl. VAT SAR 200.00",
+  "extractionConfidence": 0.92
+}

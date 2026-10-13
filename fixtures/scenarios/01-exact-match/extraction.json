@@ -1,0 +1,13 @@
+{
+  "kind": "result",
+  "documentType": "RECEIPT",
+  "merchantName": "Alfanar Fuel Station 04",
+  "vatNumber": "300123456700003",
+  "totalAmount": 15000,
+  "currency": "SAR",
+  "documentDate": "2025-06-10",
+  "cardLast4": "4471",
+  "invoiceNumber": null,
+  "rawText": "ALFANAR FUEL STATION 04\nRIYADH\nVAT 300123456700003\n2025-06-10 10:41\nUNLEADED 91  45.60 L\nTOTAL SAR 150.00\nMADA **** 4471",
+  "extractionConfidence": 0.95
+}

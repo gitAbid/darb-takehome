@@ -1,0 +1,13 @@
+{
+  "kind": "result",
+  "documentType": "RECEIPT",
+  "merchantName": "Rawabi Fuel 03",
+  "vatNumber": "305551112200003",
+  "totalAmount": 12000,
+  "currency": "SAR",
+  "documentDate": "2025-06-18",
+  "cardLast4": "4477",
+  "invoiceNumber": null,
+  "rawText": "RAWABI FUEL 03\nRIYADH\nVAT 305551112200003\n2025-06-18 18:09\nDIESEL 52.40 L\nTOTAL SAR 120.00\nMADA **** 4477",
+  "extractionConfidence": 0.86
+}

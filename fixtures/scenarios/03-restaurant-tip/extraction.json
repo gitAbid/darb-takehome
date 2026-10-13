@@ -1,0 +1,13 @@
+{
+  "kind": "result",
+  "documentType": "RECEIPT",
+  "merchantName": "Al Mashwar Grill",
+  "vatNumber": "310987654300003",
+  "totalAmount": 5750,
+  "currency": "SAR",
+  "documentDate": "2025-06-12",
+  "cardLast4": "4471",
+  "invoiceNumber": null,
+  "rawText": "AL MASHWAR GRILL\nJEDDAH\nVAT 310987654300003\n2025-06-12 20:38\nMIXED GRILL x1  50.00\nVAT 15%  7.50\nTOTAL SAR 57.50\nTIP ______\nCARD **** 4471",
+  "extractionConfidence": 0.9
+}

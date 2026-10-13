@@ -1,0 +1,13 @@
+{
+  "kind": "result",
+  "documentType": "TAX_INVOICE",
+  "merchantName": "Rawabi Fuel Company",
+  "vatNumber": "305551112200003",
+  "totalAmount": 9500,
+  "currency": "SAR",
+  "documentDate": "2025-06-11",
+  "cardLast4": null,
+  "invoiceNumber": "INV-55120",
+  "rawText": "TAX INVOICE INV-55120\nRawabi Fuel Company\nVAT 305551112200003\nDate 2025-06-11\nBill to: Najd Logistics\nDiesel\nTotal incl. VAT SAR 95.00",
+  "extractionConfidence": 0.94
+}

@@ -407,23 +407,27 @@ flowchart LR
   (`+9665•••••567`, `f•••@najd-logistics.example`); pino `redact` paths are a second safety net.
 - **The matcher never logs** (it is pure); the processor logs its result once as `match.decided`.
 - **Logs are not the audit trail** — `decidedBy`, `decidedAt`, `signals`, `failureReason` in the database are.
+- **Implementation notes:** pretty output is derived (`NODE_ENV !== 'production'`) rather than configured; the rotation
+  options are built and tested in TypeScript (`rotating-file-options.ts`) and only forwarded by the `.mjs` worker,
+  which cannot load TypeScript; redaction covers top-level fields (`contentBase64`, `rawText`, `phone`, `email`) as well
+  as the `*.`-nested paths, because events log their context at the top level.
 
 ---
 
 ## 8. Configuration
 
-| Variable                 | Default         | Purpose                                      |
-| ------------------------ | --------------- | -------------------------------------------- |
-| `DATABASE_URL`           | `file:./dev.db` | SQLite database                              |
-| `FIXTURES_DIR`           | `fixtures`      | Mock extractor registry and media store root |
-| `MEDIA_FETCH_TIMEOUT_MS` | `3000`          | WhatsApp media fetch timeout at intake       |
-| `LOG_SINK`               | `pino`          | `pino` · `console` · `test`                  |
-| `LOG_LEVEL`              | `info`          |                                              |
-| `LOG_FILE_ENABLED`       | `true` (dev)    | Disable on containers/serverless             |
-| `LOG_DIR`                | `logs`          | Rotated files (gitignored)                   |
-| `LOG_ROTATE_SIZE`        | `10M`           |                                              |
-| `LOG_ROTATE_INTERVAL`    | `1d`            |                                              |
-| `LOG_MAX_FILES`          | `14`            |                                              |
+| Variable                 | Default                                          | Purpose                                      |
+| ------------------------ | ------------------------------------------------ | -------------------------------------------- |
+| `DATABASE_URL`           | `file:./dev.db`                                  | SQLite database                              |
+| `FIXTURES_DIR`           | `fixtures`                                       | Mock extractor registry and media store root |
+| `MEDIA_FETCH_TIMEOUT_MS` | `3000`                                           | WhatsApp media fetch timeout at intake       |
+| `LOG_SINK`               | `pino`                                           | `pino` · `console` · `test`                  |
+| `LOG_LEVEL`              | `info`                                           |                                              |
+| `LOG_FILE_ENABLED`       | `true` outside production, `false` in production | Disable on containers/serverless             |
+| `LOG_DIR`                | `logs`                                           | Rotated files (gitignored)                   |
+| `LOG_ROTATE_SIZE`        | `10M`                                            |                                              |
+| `LOG_ROTATE_INTERVAL`    | `1d`                                             |                                              |
+| `LOG_MAX_FILES`          | `14`                                             |                                              |
 
 Environment is parsed once with Zod at startup (`AppEnv`); invalid configuration fails fast with a clear message.
 
