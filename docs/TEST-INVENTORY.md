@@ -176,4 +176,13 @@ pipeline → database. Check the mix with `npm run test:mix` (target 50 / 30 / 2
 
 ## Review (M5)
 
-_To be filled with the M5 tests (confirm/reject semantics, double-submit, conflicts)._
+| Rule                                                                                                           | Test                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Confirm: candidate CONFIRMED by the reviewer, siblings REJECTED, document MATCHED — atomically                 | `__tests__/e2e/review.e2e.test.ts` › "confirms the chosen candidate…"                                                         |
+| Double-submit of the same confirm/reject is a no-op success (sequential and concurrent)                        | `__tests__/e2e/review.e2e.test.ts` › "confirms the chosen candidate…", "concurrent submits…", "keeps the document in review…" |
+| Rival candidates confirmed concurrently → exactly one wins                                                     | `__tests__/e2e/review.e2e.test.ts` › "concurrent submits…"                                                                    |
+| One confirmed document per transaction enforced by the database (S07)                                          | `__tests__/e2e/review.e2e.test.ts` › "S07: the database refuses…"                                                             |
+| Reject: document stays in review while candidates remain, UNMATCHED when none                                  | `__tests__/e2e/review.e2e.test.ts` › "keeps the document in review…"                                                          |
+| Decided or system matches are not pending (cannot be confirmed/rejected again)                                 | `__tests__/e2e/review.e2e.test.ts` › "cannot reject a system decision…", "keeps the document in review…"                      |
+| Invalid input rejected before any database work; unknown match reported                                        | `__tests__/e2e/review.e2e.test.ts` › "rejects invalid input…"                                                                 |
+| Lost races: identical decision → no-op, different → not pending; conflicts mapped; unexpected errors propagate | `unit/review/review-races.test.ts`                                                                                            |

@@ -16,6 +16,7 @@ import type { BackgroundScheduler } from './services/ingestion/background-schedu
 import { DocumentProcessor } from './services/ingestion/document-processor';
 import { IntakeService } from './services/ingestion/intake-service';
 import { SenderResolver } from './services/ingestion/sender-resolver';
+import { ReviewService } from './services/review/review-service';
 import { defaultMatchingConfig } from './services/matching/matching-config';
 import { matchDocument } from './services/transaction-matcher';
 import type { BlobStore } from './storage/blob-store';
@@ -26,6 +27,7 @@ import { createWebhookHandler, type WebhookHandler } from './webhooks/http/webho
 export interface Container {
   ingestion: DocumentIngestion;
   processor: DocumentProcessor;
+  review: ReviewService;
   webhooks: { email: WebhookHandler; whatsapp: WebhookHandler };
   logger: Logger;
 }
@@ -48,6 +50,8 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
   const db = overrides.db ?? prisma;
   const logger = overrides.logger ?? createLogger(config.logging);
   const repositories = createPrismaRepositories(db);
+  const unitOfWork = new PrismaUnitOfWork(db);
+  const clock = overrides.clock ?? new SystemClock();
   const senders = new SenderResolver(repositories.senders);
   const blobStore = overrides.blobStore ?? new LocalFileBlobStore(config.blobDir);
   const intake = new IntakeService({
@@ -60,13 +64,13 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
   });
   const processor = new DocumentProcessor({
     repositories,
-    unitOfWork: new PrismaUnitOfWork(db),
+    unitOfWork,
     blobStore,
     extractor: overrides.extractor ?? new MockExtractor(FixtureRegistry.load(config.fixturesDir)),
     senders,
     matchDocument,
     dateRules: defaultMatchingConfig.date,
-    clock: overrides.clock ?? new SystemClock(),
+    clock,
     logger,
   });
   const ingestion = new DocumentIngestion({
@@ -78,6 +82,7 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
   return {
     ingestion,
     processor,
+    review: new ReviewService({ unitOfWork, clock, logger }),
     logger,
     webhooks: {
       email: createWebhookHandler((payload) => ingestion.receiveEmail(payload), logger),

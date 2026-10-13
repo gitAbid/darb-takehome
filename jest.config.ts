@@ -3,6 +3,13 @@ import type { Config } from 'jest';
 const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // next-safe-action ships ESM only (.mjs); let ts-jest transpile it so the real server actions run in tests.
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'mjs', 'json'],
+  transform: {
+    '^.+\\.tsx?$': 'ts-jest',
+    '^.+\\.m?js$': ['ts-jest', { tsconfig: { allowJs: true } }],
+  },
+  transformIgnorePatterns: ['/node_modules/(?!next-safe-action/)'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },
