@@ -110,8 +110,8 @@ The full map and the reasoning behind it are in [`docs/ARCHITECTURE.md`](docs/AR
 
 ## Fixture photos
 
-Four scenarios (01, 03, 09, 12) are meant to be phone photos of printed receipts. Rendered stand-ins are committed; to
-use real photos, print `fixtures/print/receipt-<folder>.pdf`, photograph it, then:
+Four scenarios (01, 03, 09, 12) use real phone photos of the generated receipts in `fixtures/print/`. To replace one,
+photograph the receipt, then:
 
 ```bash
 npm run fixtures:sanitize -- <photo.jpg> <folder>   # strips EXIF/GPS, resizes

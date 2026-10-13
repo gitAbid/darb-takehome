@@ -578,9 +578,8 @@ Each decision lists what was chosen, what was rejected, and why.
   (a text-only invoice PDF can legitimately be a few KB).
 - Document bytes are written to a `BlobStore` under their content hash (`storageKey`); locally that is `.storage/`
   (`LocalFileBlobStore`), in production an object store behind the same interface.
-- Four fixtures (01, 03, 09, 12) are meant to be phone photos of printed generated receipts
-  (`fixtures/print/`); until the photos are taken, rendered stand-ins are used. Replacing one is
-  `npm run fixtures:sanitize -- <photo> <folder>` then `npm run fixtures:payloads` (hashes are computed at load).
+- Four fixtures (01, 03, 09, 12) are real phone photos of printed-style generated receipts (`fixtures/print/`),
+  sanitized (EXIF/GPS stripped); the rest are generated documents (`fixtures/ATTRIBUTION.md`).
 
 ---
 
