@@ -34,7 +34,8 @@ what I would do with more time.
 9. [Assumptions](#9-assumptions)
 10. [Requirement traceability](#10-requirement-traceability)
 11. [Risk register](#11-risk-register)
-12. [With more time](#12-with-more-time)
+12. [Multi-transaction invoices (design sketch)](#12-multi-transaction-invoices-design-sketch)
+13. [With more time](#13-with-more-time)
 
 ---
 
@@ -265,7 +266,7 @@ station number _and_ OCR reads it correctly; a wrong guess there would cause a c
 says is the worse error.
 
 **Known limitation:** an Arabic receipt (`الفنار`) against a Latin acquirer name scores 0. Transliteration is listed in
-[With more time](#12-with-more-time); the result today is a review or unmatched, never a wrong auto-match.
+[With more time](#13-with-more-time); the result today is a review or unmatched, never a wrong auto-match.
 
 **Alternatives considered:** plain Levenshtein on the whole string (punished by word order and extra tokens);
 trigram similarity (good, but weaker on short brand names); a merchant master table keyed by VAT number (best signal,
@@ -629,7 +630,7 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 | R33 | Spec project structure and boilerplate                                       | setup      | files byte-identical to the brief                                                                                                                       |
 | B1  | Bonus: `/review` page                                                        | M9         | not built yet (planned M9)                                                                                                                              |
 | B2  | Bonus: re-match `UNMATCHED` documents when transactions arrive               | M8         | not built yet (planned M8)                                                                                                                              |
-| B3  | Bonus: multi-transaction invoice design sketch                               | M7         | not built yet (planned M7)                                                                                                                              |
+| B3  | Bonus: multi-transaction invoice design sketch                               | M7         | design in §12 (not built)                                                                                                                               |
 | B4  | Bonus: real extractor behind the interface, mock by default                  | M11        | not built (optional M11)                                                                                                                                |
 | B5  | Bonus: HMAC signature verification                                           | M10        | not built yet (planned M10)                                                                                                                             |
 
@@ -649,7 +650,125 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 
 ---
 
-## 12. With more time
+## 12. Multi-transaction invoices (design sketch)
+
+_Bonus B3 — designed, not built._ Suppliers often send **one tax invoice or monthly statement covering many card
+transactions** ("Alfanar Fuel — June statement, 14 fills"). Today such a document would either match nothing (its
+total equals no single transaction) or, worse, match one transaction whose amount happens to equal the total. This
+section shows how to support it without weakening the precision-first stance.
+
+### 12.1 What changes in the extraction contract
+
+The provided `ExtractedDocument` gains one **optional** field, so existing extractors keep working unchanged:
+
+```ts
+interface ExtractedLine {
+  lineNumber: number;
+  date: string | null; // ISO 8601
+  amount: number | null; // halalas, VAT-inclusive
+  cardLast4: string | null;
+  reference: string | null; // pump/receipt number when printed
+}
+
+interface ExtractedDocument {
+  // …existing fields; totalAmount stays the statement total
+  lineItems?: ExtractedLine[]; // present only for statements / multi-line invoices
+}
+```
+
+A document is treated as **multi-transaction** when it has two or more line items. A single line item is handled
+exactly like today's single-transaction document.
+
+### 12.2 Data model
+
+```mermaid
+erDiagram
+  Document ||--o{ DocumentLine : "has lines"
+  DocumentLine ||--o{ DocumentMatch : "candidates per line"
+  Transaction ||--o{ DocumentMatch : "candidates"
+  DocumentLine {
+    int id PK
+    int documentId FK
+    int lineNumber
+    datetime date
+    int amount
+    string cardLast4
+    string reference
+  }
+  DocumentMatch {
+    int documentLineId FK "nullable: null = whole-document match"
+    int confirmedTransactionId UK "unchanged: one confirmed document per transaction"
+    int confirmedLineId UK "replaces confirmedDocumentId for multi-line documents"
+  }
+```
+
+| Change                                                    | Why                                                                                                  |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| New `DocumentLine` table                                  | Each line is matched, reviewed and audited on its own                                                |
+| `DocumentMatch.documentLineId` (nullable)                 | Candidates belong to a line; `null` keeps today's single-transaction rows valid                      |
+| `UNIQUE(confirmedTransactionId)` **kept**                 | A transaction still has at most one confirmed document — even when that document is a statement (E3) |
+| `UNIQUE(confirmedDocumentId)` → `UNIQUE(confirmedLineId)` | A statement legitimately confirms many transactions, but each **line** confirms at most one          |
+| New document status `PARTIALLY_MATCHED`                   | Some lines confirmed, others still in review — visible in the queue instead of hidden                |
+
+### 12.3 Matching
+
+```mermaid
+flowchart TD
+  S["Statement: header (merchant, VAT number, total) + lines"] --> C{"Σ line amounts = total<br/>(± rounding)?"}
+  C -- no --> R1["NEEDS_REVIEW · STATEMENT_TOTAL_MISMATCH<br/>(OCR missed or misread a line)"]
+  C -- yes --> L["For each line: today's matcher<br/>line date/amount/card + header merchant"]
+  L --> A["One-to-one assignment across lines<br/>(no transaction used by two lines)"]
+  A --> G{"Per line: gates pass AND<br/>its winner is uncontested?"}
+  G -- yes --> AM["Line auto-confirmed"]
+  G -- no --> NR["Line → review with ranked candidates"]
+  AM & NR --> D["Document: MATCHED if every line confirmed,<br/>else PARTIALLY_MATCHED / NEEDS_REVIEW"]
+```
+
+1. **Total check first.** If the lines do not add up to the printed total, OCR missed or misread something; nothing
+   is auto-matched (`STATEMENT_TOTAL_MISMATCH`).
+2. **Reuse the matcher per line.** Each line becomes an `ExtractedFields` (line date, amount and card; header
+   merchant, currency and sender scope) and runs through the existing filters, signals and gates — no second scoring
+   model to maintain.
+3. **One-to-one assignment.** Lines compete for transactions: two lines of SAR 100.00 on consecutive days could both
+   prefer the same refuel. The candidate scores form a small cost matrix; the **Hungarian algorithm** (statements
+   rarely exceed a few dozen lines) finds the assignment with the highest total score. Greedy best-first is simpler
+   but can lock in a bad early choice.
+4. **Contention gate** (new reason `LINE_CONTESTED`). A line is auto-confirmed only if its assigned transaction is not
+   also a near-equal candidate for another line, and the next-best assignment scores clearly lower. Otherwise it goes
+   to review — swapping two near-identical fills is exactly the silent error section 2 forbids.
+5. **Per-line outcomes.** Uncontested lines that pass every gate auto-confirm; the rest wait for a reviewer, who
+   confirms line by line with the existing actions (`matchId` already identifies the line's candidate). If the total
+   check failed, no line auto-confirms.
+
+### 12.4 When OCR finds only a total
+
+Some statements list fills the OCR cannot read, leaving only the total. The fallback is **subset-sum**: find sets of
+in-scope transactions in the statement period whose amounts add up to the total.
+
+- It is exponential in general; with a 30–45-day period, one client's scope and a cap of ~25 candidates,
+  meet-in-the-middle keeps it fast.
+- Fleets buy round amounts (SAR 100, 150, 200) repeatedly, so **several different subsets often fit**. The result is
+  therefore **never auto-matched**: the reviewer sees the fitting subsets ranked by date spread and merchant
+  similarity, with `TOTAL_ONLY_STATEMENT`.
+
+### 12.5 Ingestion, review and tests
+
+- **Ingestion:** unchanged — one email attachment is still one `Document`; the processor writes `DocumentLine` rows
+  next to the extraction snapshot, in the same unit of work as the matches.
+- **Review:** the queue groups a statement's lines under its header; confirming one line's candidate rejects that
+  line's siblings only. The document becomes `MATCHED` when the last line is decided.
+- **Tests to add:** one end-to-end row each for (a) a three-line statement where every line matches uniquely →
+  `MATCHED`; (b) two identical SAR 100.00 lines on consecutive days → both `LINE_CONTESTED` in review; (c) lines that
+  do not add up → `STATEMENT_TOTAL_MISMATCH`; (d) a total-only statement → `TOTAL_ONLY_STATEMENT` with subsets. Unit
+  tests for the assignment (optimal vs greedy counter-example) and the contention gate.
+
+**Rejected alternatives:** matching the statement total against single transactions (wrong by construction); splitting
+a statement into one `Document` per line at intake (loses the shared header, the total check and the single audit
+trail of what the supplier actually sent).
+
+---
+
+## 13. With more time
 
 - **Calibrated scoring:** fit weights and thresholds on reviewer decisions; report precision/recall per threshold.
 - **Supersede rule (E3):** let a tax invoice replace a confirmed receipt with an explicit reviewer action.
