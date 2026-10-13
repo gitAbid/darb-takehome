@@ -18,6 +18,11 @@ const eslintConfig = [
     },
   },
   {
+    // CommonJS files (Jest transformers) can only load modules with require().
+    files: ['**/*.cjs'],
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
     ignores: ['node_modules/**', '.next/**', 'out/**', 'build/**', 'coverage/**', 'next-env.d.ts'],
   },
 ];

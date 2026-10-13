@@ -116,6 +116,14 @@ All optional except `DATABASE_URL`; see [`.env.example`](.env.example). Configur
 fast with the offending variable. In production, logs go to stdout (set `LOG_FILE_ENABLED=true` for rotated, gzipped
 files under `logs/`).
 
+**Real extraction (bonus B4).** The fixture-backed mock is the default. To read real documents with any vision
+model, set `EXTRACTOR=llm` plus `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_KEY` — the provider is just configuration
+(Anthropic, OpenAI, Gemini, OpenRouter or a local Ollama; table and design in
+[IMPLEMENTATION.md §5.7](IMPLEMENTATION.md#57-real-extraction-with-any-llm-bonus-b4)). Recommended start:
+`LLM_BASE_URL=https://api.anthropic.com/v1/`, `LLM_MODEL=claude-sonnet-5-5`. Documents are then sent to that provider.
+Check it against your key with
+`LLM_LIVE_TEST=1 EXTRACTOR=llm LLM_BASE_URL=… LLM_MODEL=… LLM_API_KEY=… npx jest extraction-llm-io`.
+
 **Webhook signatures (bonus B5).** Set `WHATSAPP_APP_SECRET`, `EMAIL_WEBHOOK_SECRET` and
 `TRANSACTIONS_WEBHOOK_SECRET` to require an HMAC-SHA256 signature (`X-Hub-Signature-256` for WhatsApp,
 `X-Signature-256` otherwise); unsigned or wrongly signed requests get `401`. `WHATSAPP_VERIFY_TOKEN` answers Meta's

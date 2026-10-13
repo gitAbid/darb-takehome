@@ -381,6 +381,60 @@ sequenceDiagram
 - **Replays** of a correctly signed delivery are harmless: Meta's signature has no timestamp, but the idempotency keys
   (section 5.1) turn a replay into a `duplicate`.
 
+### 5.7 Real extraction with any LLM (bonus B4)
+
+The mock stays the default (`EXTRACTOR=mock`), so the project runs with no keys. `EXTRACTOR=llm` swaps in
+`LlmExtractor` behind the same `DocumentExtractor` interface; nothing else in the pipeline changes.
+
+**Model-agnostic by wire format.** The extractor speaks OpenAI's Chat Completions format with plain `fetch` (no SDK).
+Anthropic, OpenAI, Gemini, OpenRouter and Ollama all serve it, so switching provider is a base URL, model and key:
+
+| Provider       | `LLM_BASE_URL`                                             | Example `LLM_MODEL`  |
+| -------------- | ---------------------------------------------------------- | -------------------- |
+| Anthropic      | `https://api.anthropic.com/v1/`                            | `claude-sonnet-5-5`  |
+| OpenAI         | `https://api.openai.com/v1`                                | a vision model       |
+| Gemini         | `https://generativelanguage.googleapis.com/v1beta/openai/` | a Gemini Flash model |
+| OpenRouter     | `https://openrouter.ai/api/v1`                             | any listed model     |
+| Ollama (local) | `http://localhost:11434/v1` (no key)                       | a local vision model |
+
+Recommended default: **Claude Sonnet 5.5** (accuracy vs cost on mixed Arabic/English thermal receipts); Haiku 5.5 for
+volume, Opus 5.5 for the hardest documents, a local model when data must stay in-country. Not benchmarked on our
+fixtures; the matcher's OCR-confidence gate keeps a weaker model from causing wrong auto-matches.
+
+```mermaid
+flowchart LR
+    F[File bytes] -->|image| I[base64 data URL]
+    F -->|PDF| T[text layer via unpdf]
+    S[Zod reply schema] -->|zod-to-json-schema| J[JSON Schema]
+    I & T & J --> P[Guided prompt: role · input · rules · output format]
+    P --> C[LlmClient: POST /chat/completions]
+    C --> R[Reply JSON]
+    R -->|lenient Zod parse: bad field → null| L[Raw 'as printed' fields]
+    L -->|our parsers: halalas, ISO date, VAT, last4| E[ExtractedDocument]
+    L --> K[Confidence = min of claimed and verified]
+    K --> E
+```
+
+- **One schema, two uses.** `llm-extraction.schema.ts` is rendered as JSON Schema into the prompt and parses the reply.
+  A field added there is asked for automatically; field instructions come from each field's `.describe()`.
+- **Lenient per field.** Every property is required but nullable; a missing or invalid value becomes `null`
+  (`.catch`), extra keys are dropped. One misread field never discards the document.
+- **The model reads; our code converts.** The model copies values as printed (`"57.50"`, `"14/06/2025"`, `"ر.س"`);
+  tested parsers turn them into halalas, ISO dates, 15-digit VAT numbers and last4 — Arabic-Indic digits and
+  day-first dates included, ambiguous values → `null`.
+- **Wiring a new field into matching is deliberate.** `FIELD_ROUTING` must name where every schema field lands, so a
+  new field fails the typecheck until someone decides how it is used.
+- **Confidence = min(model's claim, verified essentials).** Each of total, date, merchant and document type that is
+  missing caps it (3 of 4 → 0.75, under the 0.80 auto-match gate), so a confident but incomplete read goes to review.
+- **PDFs are sent as their text layer** (no provider accepts PDFs the same way); a scanned PDF without one fails as
+  `EXTRACTION_ERROR`. Rasterizing pages is on the "with more time" list.
+- **Portable request.** `temperature` is sent only when `LLM_TEMPERATURE` is set (Claude 4.7+ rejects values below
+  1 on this route); `response_format: json_schema` only with `LLM_STRUCTURED_OUTPUT=true` (Anthropic ignores it). The
+  prompt and the Zod parse work everywhere without either.
+- **Failures** — HTTP errors, timeouts (`LLM_TIMEOUT_MS`), empty or non-JSON replies, unsupported file types — throw
+  `ExtractionFailedError`, so the document ends `FAILED` / `EXTRACTION_ERROR` (section 5.4). The document text is data:
+  the prompt says to ignore instructions inside it.
+
 ## 6. Data model
 
 ### 6.1 Entities
@@ -610,46 +664,51 @@ Each decision lists what was chosen, what was rejected, and why.
 
 ### Design decisions
 
-| ID  | Decision                                                                                   | Rejected alternative                             | Why                                                                                                               |
-| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| D1  | Precision over recall                                                                      | Maximize auto-match rate                         | Section 2: a wrong attach is silent and costly; a review is cheap                                                 |
-| D2  | Filters → weighted score → gates, with reason codes                                        | Plain weighted sum; Fellegi–Sunter               | Section 3.8                                                                                                       |
-| D3  | `mcc` on transactions; tip band only for MCC 5812/5814; tips never auto                    | Global ±20 % tolerance                           | A fuel station charging 20 % over its receipt would look plausible                                                |
-| D4  | Card last4 graded: equal / one-digit misread / filtered / absent                           | Hard veto on any mismatch                        | Thermal-paper OCR confuses `1`/`7`, `0`/`8`; a random different card differs in one digit only 0.4 % of the time  |
-| D5  | `Card` entity (`clientId`, `last4`, `label`); `driverPhone` stays on `Transaction`         | Flat `cardLast4` string; `driverPhone` on `Card` | Makes shared last4 explicit; drivers share vehicle cards, so the driver belongs to the transaction                |
-| D6  | `contentHash` nullable                                                                     | Required hash                                    | A failed media fetch would otherwise lose the webhook                                                             |
-| D7  | Malformed envelope → 400; a bad message inside a valid envelope is skipped, 200            | 400 for the whole batch                          | Meta retries the whole delivery on non-2xx — one bad message would loop forever                                   |
-| D8  | Runners-up of an auto-match stored as `REJECTED` by `system`                               | Discard them                                     | Audit trail, and future training data                                                                             |
-| D9  | Same confirm twice = no-op; confirming a sibling or rejected match = error                 | Error on every repeat                            | Double-clicks are normal; conflicting decisions are not                                                           |
-| D10 | `storageKey` + `mimeType` on `Document`                                                    | Store bytes in the database                      | A reviewer must see the file; blobs belong in object storage                                                      |
-| D11 | Scope filtered in the query **and** re-checked in the matcher (`signals.scope`)            | Query only                                       | Defence in depth; the spec lists scoping as a signal                                                              |
-| D12 | Unmeasurable signals omitted from `signals`; `reasons`/`flags` added                       | `null` values                                    | Keeps the spec's `Record<string, number>` type                                                                    |
-| D13 | Persist → respond → `after()` for extraction + matching                                    | Synchronous processing; a queue                  | Fast responses without infrastructure; a queue is the production path (risk register)                             |
-| D14 | Extractor/media failures → `FAILED`; extracted-but-unusable → `UNMATCHED` + reason         | Everything `FAILED`                              | `FAILED` means "system problem, retry"; `UNMATCHED` means "a human should look"                                   |
-| D15 | Ingestion tests on a real SQLite test database                                             | Mocked Prisma                                    | Idempotency is a unique-constraint property; only a real database proves it                                       |
-| D16 | No status-history table                                                                    | `DocumentEvent` audit table                      | Final state + `decidedBy`/`decidedAt`/`failureReason` answer who/when/why; history under more time                |
-| D17 | WhatsApp media fetched and hashed **during** the request (3 s timeout)                     | Fetch in the background                          | Content dedupe must happen before the row exists; otherwise duplicates need a merge state                         |
-| D18 | Amount plausibility is a **filter** (directional, MCC-aware)                               | Amount as a score only                           | Stops strong merchant/date/card from dragging a different purchase into review                                    |
-| D19 | `MatchResult.excluded` counts per filter                                                   | Only return survivors                            | Explains _why_ nothing matched ("4 removed by currency")                                                          |
-| D20 | Generic category words weigh 0.3 in merchant similarity                                    | All tokens equal                                 | `rawabi fuel` vs `alfanar fuel` must not score 0.5 just for sharing `fuel`                                        |
-| D21 | Store numbers dropped during normalization                                                 | Keep them                                        | Section 4 trade-off: avoids confident wrong matches from misread station numbers                                  |
-| D22 | `Driver` table for phone → client(s)                                                       | Derive clients from `Transaction.driverPhone`    | Explicit mapping the brief asks for; a new driver is known before their first transaction                         |
-| D23 | Each test file gets its own migrated SQLite copy                                           | One shared test database                         | Parallel Jest workers never interfere; tests run against the real schema and `CHECK`s                             |
-| D24 | Bytes go to a `BlobStore` keyed by content hash before the insert                          | Keep bytes in memory for `after()`               | Processing, reprocessing and the reviewer all read the same stored file; a crash loses no bytes                   |
-| D25 | `BackgroundScheduler` interface (`after()` in production, inline in tests)                 | Call `after()` directly                          | Services stay framework-free; tests await post-response work deterministically                                    |
-| D26 | A redelivery is reported as an `externalId` duplicate even though it also repeats the hash | Report whichever constraint SQLite names first   | The result must say _why_ it was a duplicate: same message vs same file in a new message                          |
-| D27 | An auto-match that loses the confirmed-slot race is re-saved as `NEEDS_REVIEW`             | Fail the document                                | The database stops the double confirmation; the document still reaches a human                                    |
-| D28 | Review outcomes are values; a lost race re-reads the match                                 | Throw on every non-update                        | A double-click must succeed quietly, while a genuine conflict must be shown to the reviewer                       |
-| D29 | One `MatchStage` shared by first-time processing and re-matching                           | A separate re-match matcher                      | Both paths must follow identical rules; one implementation cannot drift                                           |
-| D30 | `Transaction.externalRef` unique, added by an additive migration                           | Trust the feed not to redeliver                  | Same idempotency principle as the webhooks; additive `ALTER TABLE` keeps the hand-written `CHECK`s intact         |
-| D31 | Re-matching excludes transactions already proposed for the document                        | Re-propose everything                            | A reviewer's rejection is a decision; asking again wastes their time and invites a wrong confirm                  |
-| D32 | Look-alike candidates are not pre-selected in the UI                                       | Pre-select the top candidate everywhere          | A one-key default on a coin flip invites exactly the silent wrong match section 2 forbids                         |
-| D33 | Server components + two small client islands (candidate board, tooltips)                   | A client-side SPA fetching JSON                  | Less JavaScript, no loading waterfalls, data rendered where the database is                                       |
-| D34 | Separate read model (`ReviewQueueReader`) from decisions (`ReviewService`)                 | One service for both                             | Queries can be shaped for the screen without touching the invariant-enforcing write path                          |
-| D35 | Verify the HMAC over the raw bytes, before JSON parsing                                    | Verify after parsing / on re-serialized JSON     | Re-serialized JSON changes bytes and breaks valid signatures; unauthenticated input should never reach a parser   |
-| D36 | Email and card feed use Meta's `sha256=` HMAC format under `X-Signature-256`               | Pick one email provider's scheme now             | The brief names no email provider; one well-known format behind an interface is swapped per provider in one class |
-| D37 | An endpoint without a secret accepts unsigned requests and logs a warning at startup       | Refuse every request until secrets are set       | Clone-and-run must keep working for reviewers; the warning makes the open door visible (risk register)            |
-| D38 | Review UI prefetches the next/previous document and caches visited ones for 30 s           | Client-side SPA fetching JSON per document       | Instant J/K with the existing server components; decisions still refresh, and guarded writes catch stale views    |
+| ID  | Decision                                                                                   | Rejected alternative                             | Why                                                                                                                  |
+| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| D1  | Precision over recall                                                                      | Maximize auto-match rate                         | Section 2: a wrong attach is silent and costly; a review is cheap                                                    |
+| D2  | Filters → weighted score → gates, with reason codes                                        | Plain weighted sum; Fellegi–Sunter               | Section 3.8                                                                                                          |
+| D3  | `mcc` on transactions; tip band only for MCC 5812/5814; tips never auto                    | Global ±20 % tolerance                           | A fuel station charging 20 % over its receipt would look plausible                                                   |
+| D4  | Card last4 graded: equal / one-digit misread / filtered / absent                           | Hard veto on any mismatch                        | Thermal-paper OCR confuses `1`/`7`, `0`/`8`; a random different card differs in one digit only 0.4 % of the time     |
+| D5  | `Card` entity (`clientId`, `last4`, `label`); `driverPhone` stays on `Transaction`         | Flat `cardLast4` string; `driverPhone` on `Card` | Makes shared last4 explicit; drivers share vehicle cards, so the driver belongs to the transaction                   |
+| D6  | `contentHash` nullable                                                                     | Required hash                                    | A failed media fetch would otherwise lose the webhook                                                                |
+| D7  | Malformed envelope → 400; a bad message inside a valid envelope is skipped, 200            | 400 for the whole batch                          | Meta retries the whole delivery on non-2xx — one bad message would loop forever                                      |
+| D8  | Runners-up of an auto-match stored as `REJECTED` by `system`                               | Discard them                                     | Audit trail, and future training data                                                                                |
+| D9  | Same confirm twice = no-op; confirming a sibling or rejected match = error                 | Error on every repeat                            | Double-clicks are normal; conflicting decisions are not                                                              |
+| D10 | `storageKey` + `mimeType` on `Document`                                                    | Store bytes in the database                      | A reviewer must see the file; blobs belong in object storage                                                         |
+| D11 | Scope filtered in the query **and** re-checked in the matcher (`signals.scope`)            | Query only                                       | Defence in depth; the spec lists scoping as a signal                                                                 |
+| D12 | Unmeasurable signals omitted from `signals`; `reasons`/`flags` added                       | `null` values                                    | Keeps the spec's `Record<string, number>` type                                                                       |
+| D13 | Persist → respond → `after()` for extraction + matching                                    | Synchronous processing; a queue                  | Fast responses without infrastructure; a queue is the production path (risk register)                                |
+| D14 | Extractor/media failures → `FAILED`; extracted-but-unusable → `UNMATCHED` + reason         | Everything `FAILED`                              | `FAILED` means "system problem, retry"; `UNMATCHED` means "a human should look"                                      |
+| D15 | Ingestion tests on a real SQLite test database                                             | Mocked Prisma                                    | Idempotency is a unique-constraint property; only a real database proves it                                          |
+| D16 | No status-history table                                                                    | `DocumentEvent` audit table                      | Final state + `decidedBy`/`decidedAt`/`failureReason` answer who/when/why; history under more time                   |
+| D17 | WhatsApp media fetched and hashed **during** the request (3 s timeout)                     | Fetch in the background                          | Content dedupe must happen before the row exists; otherwise duplicates need a merge state                            |
+| D18 | Amount plausibility is a **filter** (directional, MCC-aware)                               | Amount as a score only                           | Stops strong merchant/date/card from dragging a different purchase into review                                       |
+| D19 | `MatchResult.excluded` counts per filter                                                   | Only return survivors                            | Explains _why_ nothing matched ("4 removed by currency")                                                             |
+| D20 | Generic category words weigh 0.3 in merchant similarity                                    | All tokens equal                                 | `rawabi fuel` vs `alfanar fuel` must not score 0.5 just for sharing `fuel`                                           |
+| D21 | Store numbers dropped during normalization                                                 | Keep them                                        | Section 4 trade-off: avoids confident wrong matches from misread station numbers                                     |
+| D22 | `Driver` table for phone → client(s)                                                       | Derive clients from `Transaction.driverPhone`    | Explicit mapping the brief asks for; a new driver is known before their first transaction                            |
+| D23 | Each test file gets its own migrated SQLite copy                                           | One shared test database                         | Parallel Jest workers never interfere; tests run against the real schema and `CHECK`s                                |
+| D24 | Bytes go to a `BlobStore` keyed by content hash before the insert                          | Keep bytes in memory for `after()`               | Processing, reprocessing and the reviewer all read the same stored file; a crash loses no bytes                      |
+| D25 | `BackgroundScheduler` interface (`after()` in production, inline in tests)                 | Call `after()` directly                          | Services stay framework-free; tests await post-response work deterministically                                       |
+| D26 | A redelivery is reported as an `externalId` duplicate even though it also repeats the hash | Report whichever constraint SQLite names first   | The result must say _why_ it was a duplicate: same message vs same file in a new message                             |
+| D27 | An auto-match that loses the confirmed-slot race is re-saved as `NEEDS_REVIEW`             | Fail the document                                | The database stops the double confirmation; the document still reaches a human                                       |
+| D28 | Review outcomes are values; a lost race re-reads the match                                 | Throw on every non-update                        | A double-click must succeed quietly, while a genuine conflict must be shown to the reviewer                          |
+| D29 | One `MatchStage` shared by first-time processing and re-matching                           | A separate re-match matcher                      | Both paths must follow identical rules; one implementation cannot drift                                              |
+| D30 | `Transaction.externalRef` unique, added by an additive migration                           | Trust the feed not to redeliver                  | Same idempotency principle as the webhooks; additive `ALTER TABLE` keeps the hand-written `CHECK`s intact            |
+| D31 | Re-matching excludes transactions already proposed for the document                        | Re-propose everything                            | A reviewer's rejection is a decision; asking again wastes their time and invites a wrong confirm                     |
+| D32 | Look-alike candidates are not pre-selected in the UI                                       | Pre-select the top candidate everywhere          | A one-key default on a coin flip invites exactly the silent wrong match section 2 forbids                            |
+| D33 | Server components + two small client islands (candidate board, tooltips)                   | A client-side SPA fetching JSON                  | Less JavaScript, no loading waterfalls, data rendered where the database is                                          |
+| D34 | Separate read model (`ReviewQueueReader`) from decisions (`ReviewService`)                 | One service for both                             | Queries can be shaped for the screen without touching the invariant-enforcing write path                             |
+| D35 | Verify the HMAC over the raw bytes, before JSON parsing                                    | Verify after parsing / on re-serialized JSON     | Re-serialized JSON changes bytes and breaks valid signatures; unauthenticated input should never reach a parser      |
+| D36 | Email and card feed use Meta's `sha256=` HMAC format under `X-Signature-256`               | Pick one email provider's scheme now             | The brief names no email provider; one well-known format behind an interface is swapped per provider in one class    |
+| D37 | An endpoint without a secret accepts unsigned requests and logs a warning at startup       | Refuse every request until secrets are set       | Clone-and-run must keep working for reviewers; the warning makes the open door visible (risk register)               |
+| D38 | Review UI prefetches the next/previous document and caches visited ones for 30 s           | Client-side SPA fetching JSON per document       | Instant J/K with the existing server components; decisions still refresh, and guarded writes catch stale views       |
+| D39 | One OpenAI-compatible client over plain `fetch` for every LLM provider                     | A provider SDK or one adapter per provider       | Switching model is configuration; no vendor lock-in; a native adapter is one more `LlmClient` if a provider needs it |
+| D40 | The reply schema (Zod) is rendered as JSON Schema into the prompt and parses the reply     | Hand-written prompt fields + separate parser     | One source of truth: a new field is asked for and parsed without prompt edits                                        |
+| D41 | The model returns values as printed; our code converts to halalas and dates                | Ask the model for halalas / ISO dates            | Models make silent arithmetic and day/month mistakes; tested parsers are deterministic and conservative              |
+| D42 | Extraction confidence = min(model's claim, verified essentials)                            | Trust the model's self-reported confidence       | Self-reports are not calibrated; missing essentials must push the document to review                                 |
+| D43 | PDFs go to the model as their text layer                                                   | Send PDFs as files / rasterize pages             | File inputs differ per provider; text is portable and exact for generated invoices; scans fail visibly               |
 
 ---
 
@@ -718,7 +777,7 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 | B1  | Bonus: `/review` page                                                        | M9         | `app/review`; `unit/review-ui/*`, `integration/review-read-model.test.ts`; browser-verified (§7.1)                                                      |
 | B2  | Bonus: re-match `UNMATCHED` documents when transactions arrive               | M8         | `e2e/rematch.e2e.test.ts`; `integration/ingestion/rematch-isolation.test.ts` (§5.5)                                                                     |
 | B3  | Bonus: multi-transaction invoice design sketch                               | M7         | design in §12 (not built)                                                                                                                               |
-| B4  | Bonus: real extractor behind the interface, mock by default                  | M11        | not built (optional M11)                                                                                                                                |
+| B4  | Bonus: real extractor behind the interface, mock by default                  | M11        | `unit/extraction/llm-extraction.test.ts`; `integration/extraction-llm-io.test.ts`; `e2e/llm-extraction.e2e.test.ts` (section 5.7)                       |
 | B5  | Bonus: HMAC signature verification                                           | M10        | `unit/webhooks/signature-verification.test.ts`; `e2e/webhooks.e2e.test.ts` › "webhook authentication (bonus B5)" (section 5.6)                          |
 
 ---
@@ -734,6 +793,8 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 | A transient media/extraction failure becomes a terminal `FAILED` | Document needs manual handling                | `FAILED` is queryable with a reason                                         | Retry policy in the queue                      |
 | Re-photographed duplicates have different bytes                  | Second document for the same purchase         | `TXN_ALREADY_HAS_DOCUMENT` gate sends it to review                          | Perceptual hashing                             |
 | SQLite allows a single writer                                    | Throughput ceiling                            | Fine for the exercise                                                       | Postgres                                       |
+| LLM extraction sends documents to a third-party provider         | Personal data leaves the platform (PDPL)      | Mock by default; provider is explicit configuration                         | Local model (Ollama) or an in-region provider  |
+| Provider compatibility layers are not their primary API          | Silent differences (e.g. ignored fields)      | Prompt + Zod parse need no optional features; temperature opt-in            | A native `LlmClient` for the chosen provider   |
 | Webhook secrets left unset in production                         | Anyone can post documents or transactions     | `webhook.signature_disabled` warning at startup per endpoint (D37)          | Fail startup in production without secrets     |
 
 ---
@@ -867,3 +928,5 @@ trail of what the supplier actually sent).
 - **Perceptual hashing** to catch re-photographed duplicates before matching.
 - **Pre-authorization and refund** handling (E4).
 - **Foreign-currency** receipts matched via the settlement FX rate.
+- **Scanned PDFs and Hijri dates** for the LLM extractor: rasterize pages to images; convert Hijri calendar dates.
+- **Extraction evaluation:** run the LLM extractor over a labelled set and track per-field accuracy per model.

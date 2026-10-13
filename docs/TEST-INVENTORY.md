@@ -219,3 +219,19 @@ pipeline → database. Check the mix with `npm run test:mix` (target 50 / 30 / 2
 | Meta handshake echoes the challenge only for subscribe + our token; otherwise 403                 | `unit/webhooks/signature-verification.test.ts` › "WhatsApp subscription handshake" (5 cases)    |
 | All three endpoints: 401 before parsing, nothing stored, logged; signed deliveries processed      | `e2e/webhooks.e2e.test.ts` › "accepts only correctly signed deliveries…"                        |
 | GET handshake served through the WhatsApp route                                                   | `e2e/webhooks.e2e.test.ts` › "answers Meta's subscription handshake…"                           |
+
+## Real extraction (bonus B4)
+
+| Rule                                                                                                | Test                                                                                      |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| "As printed" amounts, dates (day-first, Arabic-Indic), VAT, last4, currency → domain values or null | `unit/extraction/llm-extraction.test.ts` › "converts amounts, dates and identifiers…"     |
+| Lenient reply: bad or missing field → null, extra keys dropped; confidence = min(claim, verified)   | `unit/extraction/llm-extraction.test.ts` › "keeps every other field when one is missing…" |
+| Prompt embeds the JSON Schema generated from the Zod schema; a new field is asked for automatically | `unit/extraction/llm-extraction.test.ts` › "embeds the JSON Schema generated…"            |
+| Images sent as data URLs, PDFs as their text layer; fenced JSON tolerated                           | `unit/extraction/llm-extraction.test.ts` › "extracts an image…"                           |
+| Non-JSON / non-object replies and unsupported files → ExtractionFailedError                         | `unit/extraction/llm-extraction.test.ts` › "fails the document…"                          |
+| OpenAI wire format; key, temperature and strict output only when configured                         | `unit/extraction/llm-extraction.test.ts` › "speaks the chat-completions wire format…"     |
+| HTTP errors, empty replies, timeouts, network failures → ExtractionFailedError                      | `unit/extraction/llm-extraction.test.ts` › "turns HTTP errors…"                           |
+| Mock by default; LLM needs base URL + model; factory builds the configured extractor                | `unit/extraction/llm-extraction.test.ts` › "defaults to the mock…"                        |
+| Real PDF text layer read; text-less or corrupt PDFs refused                                         | `integration/extraction-llm-io.test.ts` › "reads a real invoice PDF…"                     |
+| Webhook → LLM extractor → matching: photo auto-matches, PDF near-tie goes to review                 | `e2e/llm-extraction.e2e.test.ts` (2 tests)                                                |
+| Live provider reads the S01 photo (opt-in, `LLM_LIVE_TEST=1`)                                       | `integration/extraction-llm-io.test.ts` › "live provider (opt-in)"                        |

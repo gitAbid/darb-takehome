@@ -2,8 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 
 import { loadAppConfig, type AppConfig } from './config/app-config';
 import { SystemClock, type Clock } from './domain/clock';
-import { FixtureRegistry } from './extraction/fixture-registry';
-import { MockExtractor } from './extraction/mock-extractor';
+import { createExtractor } from './extraction/create-extractor';
 import type { DocumentExtractor } from './extraction/types';
 import { createLogger } from './logging/create-logger';
 import type { Logger } from './logging/logger';
@@ -85,7 +84,7 @@ export function createContainer(config: AppConfig = loadAppConfig(), overrides: 
   const processor = new DocumentProcessor({
     repositories,
     blobStore,
-    extractor: overrides.extractor ?? new MockExtractor(FixtureRegistry.load(config.fixturesDir)),
+    extractor: overrides.extractor ?? createExtractor(config.extractor, config.fixturesDir),
     senders,
     matchStage,
     logger,

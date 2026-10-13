@@ -201,7 +201,7 @@ docs/                                 ARCHITECTURE.md · SCENARIOS.md
 
 | Interface               | Responsibility                                    | Default implementation        | Example replacement                  |
 | ----------------------- | ------------------------------------------------- | ----------------------------- | ------------------------------------ |
-| `DocumentExtractor`     | File bytes → `ExtractedDocument` (brief)          | `MockExtractor`               | LLM vision / Textract / Azure DI     |
+| `DocumentExtractor`     | File bytes → `ExtractedDocument` (brief)          | `MockExtractor`               | `LlmExtractor` (`EXTRACTOR=llm`)     |
 | `MediaStore`            | WhatsApp media id → bytes                         | `FixtureMediaStore`           | Meta Graph API client                |
 | `DocumentRepository`    | Documents: insert, load, update with status guard | `PrismaDocumentRepository`    | Postgres / other ORM                 |
 | `TransactionRepository` | In-scope candidates within a date window          | `PrismaTransactionRepository` | Card-processor API                   |

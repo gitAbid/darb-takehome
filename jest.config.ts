@@ -3,15 +3,19 @@ import type { Config } from 'jest';
 const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  // next-safe-action ships ESM only (.mjs); let ts-jest transpile it so the real server actions run in tests.
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'mjs', 'json'],
+  // next-safe-action and unpdf (PDF text, bonus B4) ship ESM; ts-jest transpiles them so the real code runs in tests.
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'mjs', 'cjs', 'json'],
   transform: {
     '^.+\\.tsx?$': 'ts-jest',
-    '^.+\\.m?js$': ['ts-jest', { tsconfig: { allowJs: true } }],
+    // unpdf's PDF.js bundle reads import.meta.url, which CommonJS has no equivalent for.
+    'unpdf/dist/pdfjs\\.mjs$': '<rootDir>/__tests__/setup/import-meta-url-transformer.cjs',
+    '^.+\\.[mc]?js$': ['ts-jest', { tsconfig: { allowJs: true } }],
   },
-  transformIgnorePatterns: ['/node_modules/(?!next-safe-action/)'],
+  transformIgnorePatterns: ['/node_modules/(?!(next-safe-action|unpdf)/)'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    // Export only under the "import" condition; unpdf loads it with import(), transpiled to require() here.
+    '^unpdf/pdfjs$': '<rootDir>/node_modules/unpdf/dist/pdfjs.mjs',
   },
   testMatch: ['**/__tests__/**/*.test.ts'],
   globalSetup: '<rootDir>/__tests__/setup/global-setup.ts',
