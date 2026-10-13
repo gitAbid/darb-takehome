@@ -21,7 +21,7 @@
     "fixtures:sanitize": "tsx scripts/fixtures/sanitize-photo.ts",
     "test:mix": "tsx scripts/quality/test-mix.ts",
     "db:setup": "prisma migrate deploy && prisma db seed",
-    "db:report": "tsx scripts/demo/report.ts",
+    "db:report": "tsx --env-file=.env scripts/demo/report.ts",
     "demo:webhooks": "bash scripts/demo/fire-webhooks.sh"
   },
   "dependencies": {
@@ -73,5 +73,8 @@
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
+  },
+  "engines": {
+    "node": ">=20.6"
   }
 }

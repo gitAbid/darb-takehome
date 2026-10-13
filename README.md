@@ -17,7 +17,7 @@ Jest 29 · pino (async logging with rotation)
 
 ## Quick start
 
-Requires **Node.js 20+** and npm.
+Requires **Node.js 20.6+** and npm.
 
 ```bash
 npm install                 # also generates the Prisma client
