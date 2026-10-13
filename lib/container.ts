@@ -1,127 +1,36 @@
-import type { PrismaClient } from '@prisma/client';
-
+import { buildHttpHandlers, type HttpHandlers } from './composition/http-handlers';
+import { buildInfrastructure, type ContainerOverrides } from './composition/infrastructure';
+import { buildPipelines } from './composition/pipelines';
 import { loadAppConfig, type AppConfig } from './config/app-config';
-import { summarizeConfig } from './config/config-summary';
-import { SystemClock, type Clock } from './domain/clock';
-import { createExtractor } from './extraction/create-extractor';
-import type { DocumentExtractor } from './extraction/types';
-import { createLogger } from './logging/create-logger';
-import { LogEvents } from './logging/log-events';
-import type { Logger } from './logging/logger';
-import { FixtureMediaStore } from './media/fixture-media-store';
-import type { MediaStore } from './media/media-store';
-import prisma from './prisma';
 import { PrismaReviewQueueReader } from './repositories/prisma/prisma-review-queue-reader';
-import { createPrismaRepositories, PrismaUnitOfWork } from './repositories/prisma/prisma-unit-of-work';
 import type { ReviewQueueReader } from './repositories/review-queue-reader';
-import { DocumentIngestion } from './services/document-ingestion';
-import type { BackgroundScheduler } from './services/ingestion/background-scheduler';
-import { DocumentProcessor } from './services/ingestion/document-processor';
-import { IntakeService } from './services/ingestion/intake-service';
-import { MatchStage } from './services/ingestion/match-stage';
-import { SenderResolver } from './services/ingestion/sender-resolver';
 import { DocumentFileService } from './services/review/document-file-service';
 import { ReviewService } from './services/review/review-service';
-import { defaultMatchingConfig } from './services/matching/matching-config';
-import { matchDocument } from './services/transaction-matcher';
-import type { BlobStore } from './storage/blob-store';
-import { LocalFileBlobStore } from './storage/local-file-blob-store';
-import { RematchService } from './services/transactions/rematch-service';
-import { TransactionIngestionService } from './services/transactions/transaction-ingestion';
-import { NextAfterScheduler } from './webhooks/http/next-after-scheduler';
-import { createTransactionHandler } from './webhooks/http/transaction-handler';
-import { createWebhookHandler, type WebhookHandler } from './webhooks/http/webhook-handler';
-import { withRequestLogging } from './webhooks/http/with-request-logging';
-import { createWebhookVerifiers } from './webhooks/security/create-verifiers';
-import { createWhatsAppVerificationHandler } from './webhooks/whatsapp/verification-handshake';
 
-export interface Container {
-  ingestion: DocumentIngestion;
-  processor: DocumentProcessor;
+export type { ContainerOverrides } from './composition/infrastructure';
+
+/** What the app's entry points (routes, server actions, the review page) use. */
+export interface Container extends HttpHandlers {
   review: ReviewService;
   reviewQueue: ReviewQueueReader;
   documentFiles: DocumentFileService;
-  webhooks: { email: WebhookHandler; whatsapp: WebhookHandler; whatsappVerification: WebhookHandler };
-  transactions: WebhookHandler;
-  logger: Logger;
-}
-
-/** Replaceable infrastructure. Anything not overridden gets the default implementation. */
-export interface ContainerOverrides {
-  db?: PrismaClient;
-  logger?: Logger;
-  extractor?: DocumentExtractor;
-  mediaStore?: MediaStore;
-  blobStore?: BlobStore;
-  scheduler?: BackgroundScheduler;
-  clock?: Clock;
 }
 
 /** Kept on globalThis so dev hot reloads reuse it instead of re-spawning logger workers and re-hashing fixtures. */
 const globalForContainer = globalThis as unknown as { darbContainer?: Container };
 
-/** The composition root: the one place that decides which implementation backs each interface. */
+/**
+ * The composition root: the one place that decides which implementation backs each interface. Built in three steps,
+ * each in `lib/composition/`: shared infrastructure → the document and transaction pipelines → the HTTP handlers.
+ */
 export function createContainer(config: AppConfig = loadAppConfig(), overrides: ContainerOverrides = {}): Container {
-  const db = overrides.db ?? prisma;
-  const logger = overrides.logger ?? createLogger(config.logging);
-  logger.info(LogEvents.AppStarted, summarizeConfig(config));
-  const repositories = createPrismaRepositories(db);
-  const unitOfWork = new PrismaUnitOfWork(db);
-  const clock = overrides.clock ?? new SystemClock();
-  const senders = new SenderResolver(repositories.senders);
-  const blobStore = overrides.blobStore ?? new LocalFileBlobStore(config.blobDir);
-  const intake = new IntakeService({
-    documents: repositories.documents,
-    mediaStore: overrides.mediaStore ?? FixtureMediaStore.load(config.fixturesDir),
-    blobStore,
-    senders,
-    logger,
-    mediaTimeoutMs: config.mediaFetchTimeoutMs,
-  });
-  const matchStage = new MatchStage({
-    repositories,
-    unitOfWork,
-    matchDocument,
-    dateRules: defaultMatchingConfig.date,
-    clock,
-  });
-  const processor = new DocumentProcessor({
-    repositories,
-    blobStore,
-    extractor: overrides.extractor ?? createExtractor(config.extractor, config.fixturesDir, logger),
-    senders,
-    matchStage,
-    logger,
-  });
-  const scheduler = overrides.scheduler ?? new NextAfterScheduler();
-  const ingestion = new DocumentIngestion({ intake, processor, scheduler, logger });
-  const transactionIngestion = new TransactionIngestionService({
-    transactions: repositories.transactions,
-    rematch: new RematchService({ repositories, matchStage, senders, dateRules: defaultMatchingConfig.date, logger }),
-    scheduler,
-    logger,
-  });
-  const verifiers = createWebhookVerifiers(config.webhookSecurity, logger);
-  const logged = (handler: WebhookHandler) => withRequestLogging(handler, logger);
+  const infra = buildInfrastructure(config, overrides);
+  const pipelines = buildPipelines(infra, config, overrides);
   return {
-    ingestion,
-    processor,
-    review: new ReviewService({ unitOfWork, clock, logger }),
-    reviewQueue: new PrismaReviewQueueReader(db),
-    documentFiles: new DocumentFileService(repositories.documents, blobStore),
-    logger,
-    webhooks: {
-      email: logged(createWebhookHandler((payload) => ingestion.receiveEmail(payload), verifiers.email, logger)),
-      whatsapp: logged(
-        createWebhookHandler((payload) => ingestion.receiveWhatsApp(payload), verifiers.whatsapp, logger),
-      ),
-      whatsappVerification: logged(
-        createWhatsAppVerificationHandler(config.webhookSecurity.whatsappVerifyToken, logger),
-      ),
-    },
-    transactions: logged(
-      createTransactionHandler((payload) => transactionIngestion.receive(payload), verifiers.transactions, logger),
-    ),
+    ...buildHttpHandlers(pipelines, config.webhookSecurity, infra.logger),
+    review: new ReviewService({ unitOfWork: infra.unitOfWork, clock: infra.clock, logger: infra.logger }),
+    reviewQueue: new PrismaReviewQueueReader(infra.db),
+    documentFiles: new DocumentFileService(infra.repositories.documents, infra.blobStore),
   };
 }
 

@@ -352,7 +352,7 @@ a misconfigured deployment is visible in the logs.
 | Add a channel (e.g. SMS)               | A Zod schema + adapter in `lib/webhooks/<channel>/`, a route in `app/api/webhooks/<channel>/`                                                    |
 | Plug in another extractor              | Implement `DocumentExtractor` ([`lib/extraction/types.ts`](lib/extraction/types.ts)) and select it in `lib/extraction/create-extractor.ts`       |
 | Ask the LLM for a new field            | [`lib/extraction/llm/llm-extraction.schema.ts`](lib/extraction/llm/llm-extraction.schema.ts); the prompt picks it up automatically               |
-| Swap a concrete implementation         | The composition root, [`lib/container.ts`](lib/container.ts)                                                                                     |
+| Swap a concrete implementation         | The composition root: [`lib/container.ts`](lib/container.ts) and its builders in `lib/composition/`                                              |
 | Add a scenario                         | `docs/SCENARIOS.md` row → seed data in `prisma/seed-data/` → fixture folder → `npm run fixtures:payloads` (a consistency test checks they agree) |
 
 ---

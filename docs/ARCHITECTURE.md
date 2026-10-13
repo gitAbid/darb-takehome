@@ -90,8 +90,8 @@ flowchart TD
 ```
 
 **The rule:** arrows point inwards. Services know only **interfaces** (ports), never Prisma, the file system or pino.
-The matcher and domain know nothing but plain data. Only `lib/container.ts` knows which concrete class implements
-which interface. This is what makes every external dependency replaceable with a one-line change.
+The matcher and domain know nothing but plain data. Only the composition root (`lib/container.ts` and its three
+builders in `lib/composition/`) knows which concrete class implements which interface. This is what makes every external dependency replaceable with a one-line change.
 
 ---
 
@@ -110,6 +110,10 @@ app/
 lib/
   prisma.ts · utils.ts · logger.ts    ◀ brief boilerplate, unchanged
   container.ts                        composition root: wires implementations to interfaces
+  composition/                        the composition root's three steps
+    infrastructure.ts                 db · logger · clock · scheduler · blob store · repositories (+ test overrides)
+    pipelines.ts                      document and transaction pipelines sharing one MatchStage
+    http-handlers.ts                  signature check → pipeline, wrapped with request logging
   domain/                             pure types and helpers, no I/O
     riyadh-day · clock · statuses · reason-codes · content-hash · document-date · phone · with-timeout
   logging/
@@ -237,16 +241,22 @@ event bus / CQRS (one process, one database — would add indirection without be
 ### 4.3 Composition root
 
 ```ts
-// lib/container.ts (shape)
-export function createContainer(env: AppEnv): Container {
-  const logger = createLogger(env.logging);
-  const unitOfWork = new PrismaUnitOfWork(prisma);
-  const extractor = new MockExtractor(FixtureRegistry.load(env.fixturesDir)); // swap here
-  const mediaStore = new FixtureMediaStore(env.fixturesDir); // swap here
-  const matchDocument = createMatcher(defaultMatchingConfig);
-  // ...services receive only interfaces
+// lib/container.ts
+export function createContainer(config = loadAppConfig(), overrides: ContainerOverrides = {}): Container {
+  const infra = buildInfrastructure(config, overrides); // db, logger, clock, scheduler, blob store, repositories
+  const pipelines = buildPipelines(infra, config, overrides); // documents + transactions, one shared MatchStage
+  return {
+    ...buildHttpHandlers(pipelines, config.webhookSecurity, infra.logger), // webhooks + card feed
+    review: new ReviewService({ unitOfWork: infra.unitOfWork, clock: infra.clock, logger: infra.logger }),
+    reviewQueue: new PrismaReviewQueueReader(infra.db),
+    documentFiles: new DocumentFileService(infra.repositories.documents, infra.blobStore),
+  };
 }
 ```
+
+Each step is one small file in `lib/composition/`, read top to bottom in dependency order. Tests pass
+`ContainerOverrides` (in-memory logger, inline scheduler, fixed clock, stub extractor) and get the real wiring for
+everything else. `Container` exposes only what entry points use (routes, server actions, the review page).
 
 ---
 
@@ -505,4 +515,5 @@ Rules:
 - **Ordering inside a class:** fields/constants → constructor → methods (ESLint `member-ordering`).
   **Ordering inside a file:** constants → types/interfaces → functions/classes. Methods appear in **call order**
   (a caller sits above the methods it calls), so a file reads top-down like a story.
-- Depend on interfaces; construct concrete classes only in `lib/container.ts` (and in tests).
+- Depend on interfaces; construct concrete classes only in the composition root (`lib/container.ts`,
+  `lib/composition/`) and in tests.
