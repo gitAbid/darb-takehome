@@ -54,3 +54,7 @@ coverage
 
 # document blobs
 /.storage
+
+# IDE
+/.idea
+/.vscode

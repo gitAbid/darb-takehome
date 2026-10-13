@@ -5,6 +5,21 @@ what I would do with more time.
 
 - Architecture, folder map, interfaces and flow diagrams → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Every test scenario with its data and expected outcome → [`docs/SCENARIOS.md`](docs/SCENARIOS.md)
+- Every business rule and the test that proves it → [`docs/TEST-INVENTORY.md`](docs/TEST-INVENTORY.md)
+
+## At a glance
+
+- **Precision over recall.** A wrong auto-attachment is silent and costly in a VAT-compliance product; a review is
+  cheap. The matcher auto-matches only when every gate passes and explains every other outcome with reason codes.
+- **Matcher = filters → weighted signals → decision gates.** Pure, deterministic, and explainable per signal; the
+  spec's six edge cases plus seven more realistic traps (shared card digits, OCR misreads, back-to-back refuels,
+  foreign currency, unknown sender, a document arriving after one is already confirmed) are all covered.
+- **Never lose, never duplicate.** Insert-first idempotency on message id and content hash, enforced by the database;
+  failures after the response end in `FAILED` with a reason; a `500` only when nothing was persisted.
+- **The database enforces the rules** — one confirmed document per transaction, lifecycle invariants — through
+  unique and `CHECK` constraints, not UI logic.
+- **Lean, rule-driven tests:** every business rule has a test (inventory linked above); scenario volume lives in one
+  end-to-end table that drives the real webhooks; ~99 % statement and ~96 % branch coverage.
 
 ## Contents
 
@@ -571,6 +586,10 @@ Each decision lists what was chosen, what was rejected, and why.
 
 ## 10. Requirement traceability
 
+Testing approach: one test per business rule at the cheapest layer that proves it — pure rules as unit tests,
+database guarantees as integration tests, and each scenario once end-to-end through the real webhook handlers. The
+rule-by-rule map is [`docs/TEST-INVENTORY.md`](docs/TEST-INVENTORY.md); `npm run test:mix` reports the layer balance.
+
 Every requirement in the brief, the milestone that delivers it, and the test or check that proves it. The
 "Verified by" column is filled in as each milestone closes.
 
@@ -605,15 +624,15 @@ Every requirement in the brief, the milestone that delivers it, and the test or 
 | R27 | Ingestion tests: once, redelivery, extraction failure                        | M4         | `__tests__/e2e/webhooks.e2e.test.ts` (S04, I09, S10); `document-processor.test.ts`                                                                      |
 | R28 | Normalization/similarity tests on messy merchant strings                     | M1         | `__tests__/unit/matching/text/*.test.ts`                                                                                                                |
 | R29 | TypeScript strict, Zod at boundaries, no `any`                               | all        | `tsconfig.json` strict; ESLint `no-explicit-any: error`                                                                                                 |
-| R30 | README: setup, run, seed, fire webhooks, run tests                           | M6         | pending M6                                                                                                                                              |
+| R30 | README: setup, run, seed, fire webhooks, run tests                           | M6         | `README.md` (quick start, `npm run demo:webhooks`, `requests.http`, `npm run db:report`, tests)                                                         |
 | R31 | `IMPLEMENTATION.md`: approach, decisions, assumptions, more time, trade-offs | M0 → M6    | this file                                                                                                                                               |
-| R32 | GitHub repository shared                                                     | M6         | pending M6                                                                                                                                              |
+| R32 | GitHub repository shared                                                     | M6         | shared by the author with the submission                                                                                                                |
 | R33 | Spec project structure and boilerplate                                       | setup      | files byte-identical to the brief                                                                                                                       |
-| B1  | Bonus: `/review` page                                                        | M9         | pending                                                                                                                                                 |
-| B2  | Bonus: re-match `UNMATCHED` documents when transactions arrive               | M8         | pending                                                                                                                                                 |
-| B3  | Bonus: multi-transaction invoice design sketch                               | M7         | pending                                                                                                                                                 |
-| B4  | Bonus: real extractor behind the interface, mock by default                  | M11        | optional                                                                                                                                                |
-| B5  | Bonus: HMAC signature verification                                           | M10        | pending                                                                                                                                                 |
+| B1  | Bonus: `/review` page                                                        | M9         | not built yet (planned M9)                                                                                                                              |
+| B2  | Bonus: re-match `UNMATCHED` documents when transactions arrive               | M8         | not built yet (planned M8)                                                                                                                              |
+| B3  | Bonus: multi-transaction invoice design sketch                               | M7         | not built yet (planned M7)                                                                                                                              |
+| B4  | Bonus: real extractor behind the interface, mock by default                  | M11        | not built (optional M11)                                                                                                                                |
+| B5  | Bonus: HMAC signature verification                                           | M10        | not built yet (planned M10)                                                                                                                             |
 
 ---
 

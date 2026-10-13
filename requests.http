@@ -1,0 +1,99 @@
+### Sample webhooks — VS Code "REST Client" or JetBrains HTTP Client.
+### Start the app (npm run dev), then send requests one by one. Outcome: npm run db:report
+@base = http://localhost:3000
+
+### S01 exact match → MATCHED (auto)
+POST {{base}}/api/webhooks/whatsapp
+Content-Type: application/json
+
+< ./fixtures/scenarios/01-exact-match/payload.json
+
+### S04a redelivery of S01 → 200, duplicate (externalId)
+POST {{base}}/api/webhooks/whatsapp
+Content-Type: application/json
+
+< ./fixtures/scenarios/01-exact-match/payload.json
+
+### S04b same photo, new message id → 200, duplicate (contentHash)
+POST {{base}}/api/webhooks/whatsapp
+Content-Type: application/json
+
+< ./fixtures/scenarios/04-duplicate-photo/payload.json
+
+### S02 same chain, same amount, same day → NEEDS_REVIEW (NEAR_TIE); logo attachment ignored
+POST {{base}}/api/webhooks/email
+Content-Type: application/json
+
+< ./fixtures/scenarios/02-ambiguous-same-chain/payload.json
+
+### S03 restaurant tip (57.50 vs 63.25) → NEEDS_REVIEW (AMOUNT_TIP_TOLERANCE)
+POST {{base}}/api/webhooks/whatsapp
+Content-Type: application/json
+
+< ./fixtures/scenarios/03-restaurant-tip/payload.json
+
+### S05 invoice for a transaction that does not exist yet → UNMATCHED (NO_CANDIDATES)
+POST {{base}}/api/webhooks/email
+Content-Type: application/json
+
+< ./fixtures/scenarios/05-invoice-no-transaction/payload.json
+
+### S06 unreadable photo → UNMATCHED (NOT_MATCHABLE)
+POST {{base}}/api/webhooks/whatsapp
+Content-Type: application/json
+
+< ./fixtures/scenarios/06-garbage-extraction/payload.json
+
+### S07 invoice for a transaction that already has a confirmed receipt → NEEDS_REVIEW (TXN_ALREADY_HAS_DOCUMENT)
+POST {{base}}/api/webhooks/email
+Content-Type: application/json
+
+< ./fixtures/scenarios/07-invoice-after-confirmed-receipt/payload.json
+
+### S08 two cards in one client share last4 → NEEDS_REVIEW (NEAR_TIE)
+POST {{base}}/api/webhooks/email
+Content-Type: application/json
+
+< ./fixtures/scenarios/08-shared-last4/payload.json
+
+### S09 card digit misread by OCR → NEEDS_REVIEW (CARD_POSSIBLE_MISREAD)
+POST {{base}}/api/webhooks/whatsapp
+Content-Type: application/json
+
+< ./fixtures/scenarios/09-card-misread/payload.json
+
+### S10 extractor fails → FAILED (EXTRACTION_ERROR), webhook still 200
+POST {{base}}/api/webhooks/email
+Content-Type: application/json
+
+< ./fixtures/scenarios/10-extractor-error/payload.json
+
+### S11 the brief's own example payload (supplier sender, no alias) → UNMATCHED (UNKNOWN_SENDER)
+POST {{base}}/api/webhooks/email
+Content-Type: application/json
+
+< ./fixtures/scenarios/11-unknown-sender/payload.json
+
+### S12 back-to-back round-amount refuels → NEEDS_REVIEW (NEAR_TIE)
+POST {{base}}/api/webhooks/whatsapp
+Content-Type: application/json
+
+< ./fixtures/scenarios/12-back-to-back-refuel/payload.json
+
+### S13 receipt in AED, card billed in SAR → UNMATCHED (NO_CANDIDATES)
+POST {{base}}/api/webhooks/whatsapp
+Content-Type: application/json
+
+< ./fixtures/scenarios/13-foreign-currency/payload.json
+
+### I01 malformed email (no attachments) → 400 with issue paths
+POST {{base}}/api/webhooks/email
+Content-Type: application/json
+
+< ./fixtures/payloads/ingestion/i01-email-missing-attachments.json
+
+### I05 WhatsApp media that cannot be fetched → 200, document FAILED (MEDIA_UNAVAILABLE)
+POST {{base}}/api/webhooks/whatsapp
+Content-Type: application/json
+
+< ./fixtures/payloads/ingestion/i05-whatsapp-unknown-media.json

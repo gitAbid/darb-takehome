@@ -19,7 +19,10 @@
     "fixtures:render": "tsx scripts/fixtures/render-receipts.ts",
     "fixtures:payloads": "tsx scripts/fixtures/build-sample-payloads.ts",
     "fixtures:sanitize": "tsx scripts/fixtures/sanitize-photo.ts",
-    "test:mix": "tsx scripts/quality/test-mix.ts"
+    "test:mix": "tsx scripts/quality/test-mix.ts",
+    "db:setup": "prisma migrate deploy && prisma db seed",
+    "db:report": "tsx scripts/demo/report.ts",
+    "demo:webhooks": "bash scripts/demo/fire-webhooks.sh"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

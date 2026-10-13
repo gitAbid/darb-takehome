@@ -1,36 +1,119 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Darb — Receipt & Invoice Matching
 
-## Getting Started
+Drivers send receipt photos over **WhatsApp**; suppliers and fleet managers email **tax invoices**. This service
+receives both through webhooks, extracts their data (OCR is mocked behind an interface), **matches each document to a
+card transaction with an explainable confidence score**, auto-attaches only what it is sure about, and routes the grey
+zone to a **review queue** with reasons.
 
-First, run the development server:
+- **Design, scoring and every decision with its trade-offs:** [`IMPLEMENTATION.md`](IMPLEMENTATION.md)
+- **Architecture, folder map and flow diagrams:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- **Every scenario with its data and expected outcome:** [`docs/SCENARIOS.md`](docs/SCENARIOS.md)
+- **Every business rule and the test that proves it:** [`docs/TEST-INVENTORY.md`](docs/TEST-INVENTORY.md)
+
+## Stack
+
+Next.js 15 (App Router, Route Handlers) · TypeScript 5 (strict) · Prisma 6 + SQLite · Zod 3 · next-safe-action 8 ·
+Jest 29 · pino (async logging with rotation)
+
+## Quick start
+
+Requires **Node.js 20+** and npm.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install                 # also generates the Prisma client
+cp .env.example .env
+npm run db:setup            # create the SQLite database (migrations) and load the seed data
+npm run dev                 # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+> On npm 11, install scripts are opt-in; `package.json#allowScripts` already approves the Prisma packages. If the
+> Prisma client is missing, run `npx prisma generate`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npm run db:reset` drops and recreates the database (destructive; use it to start over).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Fire the sample webhooks
 
-## Learn More
+With the app running, in a second terminal:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run demo:webhooks       # posts every scenario payload (S01–S13) and the edge-case payloads (I01–I06)
+npm run db:report           # what the pipeline decided: status, reasons, ranked matches with scores
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Or send them one at a time from [`requests.http`](requests.http) (VS Code _REST Client_ or the JetBrains HTTP client),
+or with curl:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+curl -X POST http://localhost:3000/api/webhooks/whatsapp \
+  -H 'content-type: application/json' --data-binary @fixtures/scenarios/01-exact-match/payload.json
+```
 
-## Deploy on Vercel
+Expected results, for example:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Payload                         | Response                             | Document after processing                                                    |
+| ------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------- |
+| S01 exact match                 | `200` created                        | `MATCHED` — T01 auto-confirmed (1.00), T03 kept as rejected runner-up (0.88) |
+| S01 again (redelivery)          | `200` duplicate (`externalId`)       | unchanged — no second document                                               |
+| S04 same photo, new message     | `200` duplicate (`contentHash`)      | unchanged                                                                    |
+| S03 restaurant tip              | `200` created                        | `NEEDS_REVIEW` — `AMOUNT_TIP_TOLERANCE`                                      |
+| S11 the brief's example payload | `200` created                        | `UNMATCHED` — `UNKNOWN_SENDER` (supplier sender, no client alias)            |
+| I01 malformed email             | `400` with the offending field paths | none                                                                         |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The full list is in [`docs/SCENARIOS.md`](docs/SCENARIOS.md). Browse the data with `npx prisma studio`.
+
+## Review actions
+
+`confirmMatch` / `rejectMatch` in [`lib/actions/review.ts`](lib/actions/review.ts) are next-safe-action server
+actions taking `{ matchId: number }`. They are exercised end-to-end in
+[`__tests__/e2e/review.e2e.test.ts`](__tests__/e2e/review.e2e.test.ts) (confirm, reject, double-submit, concurrent
+rivals, and the database refusing a second confirmed document for one transaction).
+
+## Tests
+
+```bash
+npm test                    # all tests (each test file gets its own migrated SQLite copy)
+npm run test:coverage       # with coverage; the build fails below 90 % on any metric
+npm run test:mix            # unit / integration / end-to-end balance
+```
+
+| Layer                       | What it covers                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| `__tests__/unit` (business) | Matcher filters, signals and decision gates; adapters; sender resolution; lifecycle |
+| `__tests__/integration`     | Database-enforced rules, repositories, seed, fixtures consistency, logging, storage |
+| `__tests__/e2e`             | Real webhook handlers → pipeline → database for every scenario; review actions      |
+
+Other checks: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm run build`.
+
+## Configuration
+
+All optional except `DATABASE_URL`; see [`.env.example`](.env.example). Configuration is validated at startup and fails
+fast with the offending variable. In production, logs go to stdout (set `LOG_FILE_ENABLED=true` for rotated, gzipped
+files under `logs/`).
+
+## Project layout
+
+```text
+app/api/webhooks/{email,whatsapp}/route.ts   HTTP only → lib/container.ts
+lib/services/document-ingestion.ts           webhook → document pipeline (facade)
+lib/services/transaction-matcher.ts          matching engine (pure)
+lib/services/{ingestion,matching,review}/    the focused modules behind those facades
+lib/webhooks/                                Zod payload schemas + channel adapters
+lib/extraction/  lib/media/  lib/storage/    swappable extractor, media store, blob store
+lib/repositories/                            interfaces + Prisma implementations
+lib/actions/review.ts                        confirm / reject server actions
+prisma/                                      schema, migration (with CHECK constraints), seed
+fixtures/                                    scenario documents, extraction results, webhook payloads
+scripts/                                     fixture generators, demo scripts, test-mix report
+```
+
+The full map and the reasoning behind it are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Fixture photos
+
+Four scenarios (01, 03, 09, 12) are meant to be phone photos of printed receipts. Rendered stand-ins are committed; to
+use real photos, print `fixtures/print/receipt-<folder>.pdf`, photograph it, then:
+
+```bash
+npm run fixtures:sanitize -- <photo.jpg> <folder>   # strips EXIF/GPS, resizes
+npm run fixtures:payloads                           # regenerates the payloads with the new bytes
+```
