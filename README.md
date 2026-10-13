@@ -143,7 +143,7 @@ The whole suite runs in about 5 seconds on a laptop. Each test file gets its own
 `dev.db` and need no running server. Tests always use the mock extractor, whatever `.env` says.
 
 ```bash
-npm test                          # everything: 210 tests (1 opt-in live test is skipped)
+npm test                          # everything: 214 tests (1 opt-in live test is skipped)
 npx jest __tests__/unit           # business logic only: matcher, signals, adapters, parsers
 npx jest matcher                  # any file name fragment works, e.g. matcher, review, webhooks
 npx jest -t "tip"                 # tests whose name matches

@@ -193,10 +193,11 @@ fixtures/                             ◀ brief
 scripts/
   fixtures/                           render-receipts.ts · sanitize-photo.ts · build-sample-payloads.ts (CLIs)
                                       + small modules: receipt-svg, render-image, render-pdf, payload-builders, …
-  fire-webhooks.sh
-types/                                ◀ brief · webhook payload types inferred from the Zod schemas
+  demo/                               fire-webhooks.sh · report.ts (npm run demo:webhooks · db:report)
+  quality/                            test-mix.ts (npm run test:mix)
+types/                                ◀ brief · ambient .d.ts only (empty); types live next to their code
 __tests__/                            ◀ brief (Jest only runs **/__tests__/**/*.test.ts)
-  unit/ · integration/ · routes/ · helpers/
+  unit/ · integration/ · e2e/ · helpers/
   setup/                              migrate a template DB once; copy it per test file
 docs/                                 ARCHITECTURE.md · SCENARIOS.md
 ```
@@ -484,12 +485,12 @@ Environment is parsed once with Zod at startup (`AppEnv`); invalid configuration
 
 ## 9. Testing strategy
 
-| Layer       | What                                                                                                    | How                                                                        |
-| ----------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Unit        | Matcher (filters, signals, policy, ranking), text helpers, domain helpers, adapters, schemas, redaction | Pure functions, table-driven from `SCENARIOS.md`                           |
-| Integration | Repositories, intake, processor, review service, schema constraints                                     | Real SQLite: a migrated template copied per test file (`__tests__/setup/`) |
-| Route       | Both webhook `POST` handlers                                                                            | Call the exported handler with a `Request`; assert status + body + rows    |
-| Consistency | Seed ⇄ fixtures ⇄ scenario matrix                                                                       | One test that fails on drift                                               |
+| Layer       | What                                                                                                    | How                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Unit        | Matcher (filters, signals, policy, ranking), text helpers, domain helpers, adapters, schemas, redaction | Pure functions, table-driven from `SCENARIOS.md`                               |
+| Integration | Repositories, intake, processor, review service, schema constraints                                     | Real SQLite: a migrated template copied per test file (`__tests__/setup/`)     |
+| End-to-end  | Webhook, card-feed and review entry points                                                              | Call the real container handlers with a `Request`; assert status + body + rows |
+| Consistency | Seed ⇄ fixtures ⇄ scenario matrix                                                                       | One test that fails on drift                                                   |
 
 Shape of the suite: **lean and rule-driven** — every business rule has at least one test and no rule is tested twice
 at the same layer ([`TEST-INVENTORY.md`](TEST-INVENTORY.md) maps each rule to its test). Target mix by count is 50 %
